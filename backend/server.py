@@ -456,7 +456,16 @@ async def delete_health_record(record_id: str, payload: dict = Depends(verify_to
 # ========== AI SYMPTOM CHECKER ==========
 
 @api_router.post("/ai/symptom-check", response_model=AISymptomResponse)
-async def ai_symptom_check(symptom_data: AISymptomCheck, payload: dict = Depends(verify_token)):
+async def ai_symptom_check(symptom_data: AISymptomCheck, credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
+    # Try to get user if authenticated, but don't require it
+    user_id = None
+    try:
+        if credentials:
+            payload = verify_token(credentials)
+            user_id = payload.get("id")
+    except:
+        pass
+    
     # Initialize AI chat
     llm_key = os.environ.get('EMERGENT_LLM_KEY')
     if not llm_key:
@@ -473,9 +482,10 @@ async def ai_symptom_check(symptom_data: AISymptomCheck, payload: dict = Depends
     Format your response as JSON with keys: assessment, risk_level, suggested_specialist, lifestyle_advice, emergency_alert (boolean)
     Always include medical disclaimer."""
     
+    session_id = f"symptom_check_{user_id or 'guest'}_{datetime.now(timezone.utc).timestamp()}"
     chat = LlmChat(
         api_key=llm_key,
-        session_id=f"symptom_check_{payload['id']}_{datetime.now(timezone.utc).timestamp()}",
+        session_id=session_id,
         system_message=system_message
     ).with_model("openai", "gpt-5.2")
     
@@ -519,20 +529,21 @@ async def ai_symptom_check(symptom_data: AISymptomCheck, payload: dict = Depends
         lifestyle_text = str(result.get("lifestyle_advice", ""))
         emergency = bool(result.get("emergency_alert", False))
         
-        # Save to history
-        history = AIAssessmentHistory(
-            user_id=payload["id"],
-            symptoms=symptom_data.symptoms,
-            assessment=assessment_text,
-            risk_level=risk_level_text,
-            suggested_specialist=specialist_text
-        )
-        history_dict = history.model_dump()
-        history_dict["created_at"] = history_dict["created_at"].isoformat()
-        
-        # Create a copy for MongoDB
-        insert_dict = {k: v for k, v in history_dict.items()}
-        await db.ai_assessments.insert_one(insert_dict)
+        # Save to history only if user is authenticated
+        if user_id:
+            history = AIAssessmentHistory(
+                user_id=user_id,
+                symptoms=symptom_data.symptoms,
+                assessment=assessment_text,
+                risk_level=risk_level_text,
+                suggested_specialist=specialist_text
+            )
+            history_dict = history.model_dump()
+            history_dict["created_at"] = history_dict["created_at"].isoformat()
+            
+            # Create a copy for MongoDB
+            insert_dict = {k: v for k, v in history_dict.items()}
+            await db.ai_assessments.insert_one(insert_dict)
         
         return AISymptomResponse(
             assessment=assessment_text,
