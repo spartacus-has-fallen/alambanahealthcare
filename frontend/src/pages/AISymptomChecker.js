@@ -26,14 +26,30 @@ const AISymptomChecker = () => {
 
     setLoading(true);
     try {
-      const response = await api.post('/ai/symptom-check', {
-        symptoms,
-        age: age ? parseInt(age) : null,
-        gender: gender || null
-      });
+      // Try with authentication, but fallback to unauthenticated if needed
+      let response;
+      try {
+        response = await api.post('/ai/symptom-check', {
+          symptoms,
+          age: age ? parseInt(age) : null,
+          gender: gender || null
+        });
+      } catch (authError) {
+        // If authentication fails, try without token
+        const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+        response = await fetch(`${BACKEND_URL}/api/ai/symptom-check`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            symptoms,
+            age: age ? parseInt(age) : null,
+            gender: gender || null
+          })
+        }).then(r => r.json()).then(data => ({ data }));
+      }
       setResult(response.data);
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'AI assessment failed');
+      toast.error(error.response?.data?.detail || error.message || 'AI assessment failed');
     } finally {
       setLoading(false);
     }
