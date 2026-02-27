@@ -228,6 +228,33 @@ const HealthRecords = () => {
                   />
                 </div>
 
+                <div>
+                  <Label>Upload Blood Report (Optional)</Label>
+                  <Input
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                          setFormData({
+                            ...formData,
+                            report_file_base64: reader.result.split(',')[1],
+                            report_file_name: file.name
+                          });
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                    className="mt-2"
+                    data-testid="file-upload-input"
+                  />
+                  {formData.report_file_name && (
+                    <p className="text-sm text-emerald-600 mt-1">✓ {formData.report_file_name}</p>
+                  )}
+                </div>
+
                 <Button type="submit" className="w-full rounded-full bg-primary hover:bg-primary/90" data-testid="submit-record-button">
                   Save Record
                 </Button>
