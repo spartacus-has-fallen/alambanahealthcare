@@ -805,6 +805,259 @@ async def get_analytics(payload: dict = Depends(verify_token)):
         "total_revenue": total_revenue
     }
 
+
+# ========== CHAT ROUTES ==========
+
+@api_router.post("/chat/send")
+async def send_chat_message(message_data: ChatMessageCreate, payload: dict = Depends(verify_token)):
+    # Get appointment to verify access
+    appointment = await db.appointments.find_one({"id": message_data.appointment_id}, {"_id": 0})
+    if not appointment:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    
+    # Get user role
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    
+    # Verify user is part of this appointment
+    if user["role"] == "patient" and appointment["patient_id"] != payload["id"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    elif user["role"] == "doctor":
+        doctor_profile = await db.doctor_profiles.find_one({"user_id": payload["id"]}, {"_id": 0})
+        if not doctor_profile or appointment["doctor_id"] != doctor_profile["id"]:
+            raise HTTPException(status_code=403, detail="Not authorized")
+    
+    # Create message
+    chat_message = ChatMessage(
+        appointment_id=message_data.appointment_id,
+        sender_id=payload["id"],
+        sender_role=user["role"],
+        message=message_data.message
+    )
+    message_dict = chat_message.model_dump()
+    message_dict["created_at"] = message_dict["created_at"].isoformat()
+    
+    insert_dict = {k: v for k, v in message_dict.items()}
+    await db.chat_messages.insert_one(insert_dict)
+    
+    return message_dict
+
+@api_router.get("/chat/{appointment_id}")
+async def get_chat_messages(appointment_id: str, payload: dict = Depends(verify_token)):
+    # Get appointment to verify access
+    appointment = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+    if not appointment:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    
+    # Get user role
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    
+    # Verify user is part of this appointment
+    if user["role"] == "patient" and appointment["patient_id"] != payload["id"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    elif user["role"] == "doctor":
+        doctor_profile = await db.doctor_profiles.find_one({"user_id": payload["id"]}, {"_id": 0})
+        if not doctor_profile or appointment["doctor_id"] != doctor_profile["id"]:
+            raise HTTPException(status_code=403, detail="Not authorized")
+    
+    # Get messages
+    messages = await db.chat_messages.find({"appointment_id": appointment_id}, {"_id": 0}).sort("created_at", 1).to_list(1000)
+    
+    # Enrich with sender names
+    for msg in messages:
+        sender = await db.users.find_one({"id": msg["sender_id"]}, {"_id": 0, "name": 1})
+        if sender:
+            msg["sender_name"] = sender["name"]
+    
+    return messages
+
+# ========== PRESCRIPTION ROUTES ==========
+
+@api_router.post("/prescriptions")
+async def create_prescription(prescription_data: PrescriptionCreate, payload: dict = Depends(verify_token)):
+    # Only doctors can create prescriptions
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "doctor":
+        raise HTTPException(status_code=403, detail="Only doctors can create prescriptions")
+    
+    # Get doctor profile
+    doctor_profile = await db.doctor_profiles.find_one({"user_id": payload["id"]}, {"_id": 0})
+    if not doctor_profile:
+        raise HTTPException(status_code=404, detail="Doctor profile not found")
+    
+    # Get appointment
+    appointment = await db.appointments.find_one({"id": prescription_data.appointment_id}, {"_id": 0})
+    if not appointment:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    
+    if appointment["doctor_id"] != doctor_profile["id"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    # Generate PDF
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+    from io import BytesIO
+    
+    buffer = BytesIO()
+    p = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+    
+    # Header
+    p.setFont("Helvetica-Bold", 20)
+    p.drawString(50, height - 50, "Alambana Healthcare")
+    p.setFont("Helvetica", 10)
+    p.drawString(50, height - 70, "A Unit of Sejal Engitech Pvt Ltd")
+    
+    # Doctor info
+    p.setFont("Helvetica-Bold", 12)
+    p.drawString(50, height - 100, f"Dr. {user['name']}")
+    p.setFont("Helvetica", 10)
+    p.drawString(50, height - 115, f"{doctor_profile['specialization']} - {doctor_profile['qualification']}")
+    
+    # Date
+    p.drawString(50, height - 140, f"Date: {datetime.now(timezone.utc).strftime('%Y-%m-%d')}")
+    
+    # Patient info
+    patient = await db.users.find_one({"id": appointment["patient_id"]}, {"_id": 0})
+    p.setFont("Helvetica-Bold", 11)
+    p.drawString(50, height - 170, f"Patient: {patient['name']}")
+    
+    # Diagnosis
+    p.setFont("Helvetica-Bold", 12)
+    p.drawString(50, height - 200, "Diagnosis:")
+    p.setFont("Helvetica", 10)
+    p.drawString(50, height - 220, prescription_data.diagnosis)
+    
+    # Medications
+    p.setFont("Helvetica-Bold", 12)
+    p.drawString(50, height - 250, "Medications:")
+    p.setFont("Helvetica", 10)
+    y_pos = height - 270
+    for i, med in enumerate(prescription_data.medications, 1):
+        p.drawString(60, y_pos, f"{i}. {med}")
+        y_pos -= 20
+    
+    # Instructions
+    if prescription_data.instructions:
+        p.setFont("Helvetica-Bold", 12)
+        p.drawString(50, y_pos - 20, "Instructions:")
+        p.setFont("Helvetica", 10)
+        p.drawString(50, y_pos - 40, prescription_data.instructions)
+        y_pos -= 60
+    
+    # Follow-up
+    if prescription_data.follow_up_date:
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(50, y_pos - 20, f"Follow-up Date: {prescription_data.follow_up_date}")
+    
+    # Footer
+    p.setFont("Helvetica", 8)
+    p.drawString(50, 50, "This is a digitally generated prescription from Alambana Healthcare")
+    p.drawString(50, 35, f"Support: 8084161465")
+    
+    p.showPage()
+    p.save()
+    
+    # Get PDF bytes and convert to base64
+    pdf_bytes = buffer.getvalue()
+    pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
+    
+    # Create prescription record
+    prescription = Prescription(
+        appointment_id=prescription_data.appointment_id,
+        doctor_id=doctor_profile["id"],
+        patient_id=appointment["patient_id"],
+        diagnosis=prescription_data.diagnosis,
+        medications=prescription_data.medications,
+        instructions=prescription_data.instructions,
+        follow_up_date=prescription_data.follow_up_date,
+        prescription_file_base64=pdf_base64
+    )
+    prescription_dict = prescription.model_dump()
+    prescription_dict["created_at"] = prescription_dict["created_at"].isoformat()
+    
+    insert_dict = {k: v for k, v in prescription_dict.items()}
+    await db.prescriptions.insert_one(insert_dict)
+    
+    # Update appointment with prescription
+    await db.appointments.update_one(
+        {"id": prescription_data.appointment_id},
+        {"$set": {"prescription_url": prescription.id}}
+    )
+    
+    return prescription_dict
+
+@api_router.get("/prescriptions/appointment/{appointment_id}")
+async def get_prescription_by_appointment(appointment_id: str, payload: dict = Depends(verify_token)):
+    prescription = await db.prescriptions.find_one({"appointment_id": appointment_id}, {"_id": 0})
+    if not prescription:
+        raise HTTPException(status_code=404, detail="Prescription not found")
+    
+    # Verify access
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] == "patient" and prescription["patient_id"] != payload["id"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    elif user["role"] == "doctor":
+        doctor_profile = await db.doctor_profiles.find_one({"user_id": payload["id"]}, {"_id": 0})
+        if not doctor_profile or prescription["doctor_id"] != doctor_profile["id"]:
+            raise HTTPException(status_code=403, detail="Not authorized")
+    
+    return prescription
+
+@api_router.get("/prescriptions/{prescription_id}/download")
+async def download_prescription(prescription_id: str, payload: dict = Depends(verify_token)):
+    prescription = await db.prescriptions.find_one({"id": prescription_id}, {"_id": 0})
+    if not prescription:
+        raise HTTPException(status_code=404, detail="Prescription not found")
+    
+    # Verify access
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] == "patient" and prescription["patient_id"] != payload["id"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    elif user["role"] == "doctor":
+        doctor_profile = await db.doctor_profiles.find_one({"user_id": payload["id"]}, {"_id": 0})
+        if not doctor_profile or prescription["doctor_id"] != doctor_profile["id"]:
+            raise HTTPException(status_code=403, detail="Not authorized")
+    
+    return {
+        "file_base64": prescription.get("prescription_file_base64"),
+        "filename": f"prescription_{prescription_id}.pdf"
+    }
+
+# ========== ENHANCED BLOG ROUTES ==========
+
+@api_router.get("/blogs/search")
+async def search_blogs(query: Optional[str] = None, category: Optional[str] = None, featured: Optional[bool] = None):
+    search_query = {}
+    if query:
+        search_query["$or"] = [
+            {"title": {"$regex": query, "$options": "i"}},
+            {"content": {"$regex": query, "$options": "i"}},
+            {"tags": {"$regex": query, "$options": "i"}}
+        ]
+    if category:
+        search_query["category"] = category
+    if featured is not None:
+        search_query["is_featured"] = featured
+    
+    search_query["is_published"] = True
+    
+    blogs = await db.blogs.find(search_query, {"_id": 0}).sort("created_at", -1).to_list(100)
+    
+    # Enrich with author data
+    for blog in blogs:
+        author = await db.users.find_one({"id": blog["author_id"]}, {"_id": 0, "password": 0})
+        if author:
+            blog["author"] = author
+    
+    return blogs
+
+@api_router.get("/blogs/categories")
+async def get_blog_categories():
+    # Get unique categories
+    categories = await db.blogs.distinct("category", {"is_published": True})
+    return categories
+
+
 # Include the router in the main app
 app.include_router(api_router)
 
