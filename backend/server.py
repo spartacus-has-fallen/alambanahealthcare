@@ -305,8 +305,13 @@ async def create_doctor_profile(profile_data: DoctorProfileCreate, payload: dict
     profile = DoctorProfile(user_id=payload["id"], **profile_data.model_dump())
     profile_dict = profile.model_dump()
     profile_dict["created_at"] = profile_dict["created_at"].isoformat()
+    if profile_dict.get("approved_at"):
+        profile_dict["approved_at"] = profile_dict["approved_at"].isoformat()
     
-    await db.doctor_profiles.insert_one(profile_dict)
+    # Create a copy for MongoDB (excludes _id)
+    insert_dict = {k: v for k, v in profile_dict.items()}
+    await db.doctor_profiles.insert_one(insert_dict)
+    
     return profile_dict
 
 @api_router.get("/doctors/profile/me")
@@ -423,7 +428,10 @@ async def create_health_record(record_data: HealthRecordCreate, payload: dict = 
     record_dict = record.model_dump()
     record_dict["created_at"] = record_dict["created_at"].isoformat()
     
-    await db.health_records.insert_one(record_dict)
+    # Create a copy for MongoDB
+    insert_dict = {k: v for k, v in record_dict.items()}
+    await db.health_records.insert_one(insert_dict)
+    
     return record_dict
 
 @api_router.get("/health-records")
