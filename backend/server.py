@@ -500,26 +500,46 @@ async def ai_symptom_check(symptom_data: AISymptomCheck, payload: dict = Depends
         elif "```" in response_text:
             response_text = response_text.split("```")[1].split("```")[0].strip()
         
-        result = json.loads(response_text)
+        try:
+            result = json.loads(response_text)
+        except:
+            # If JSON parsing fails, create structured response from text
+            result = {
+                "assessment": response_text,
+                "risk_level": "Medium",
+                "suggested_specialist": "General Physician",
+                "lifestyle_advice": "Please consult with a healthcare professional for personalized advice.",
+                "emergency_alert": False
+            }
+        
+        # Ensure all required fields are strings
+        assessment_text = str(result.get("assessment", ""))
+        risk_level_text = str(result.get("risk_level", "Medium"))
+        specialist_text = str(result.get("suggested_specialist", "General Physician"))
+        lifestyle_text = str(result.get("lifestyle_advice", ""))
+        emergency = bool(result.get("emergency_alert", False))
         
         # Save to history
         history = AIAssessmentHistory(
             user_id=payload["id"],
             symptoms=symptom_data.symptoms,
-            assessment=result.get("assessment", ""),
-            risk_level=result.get("risk_level", "Medium"),
-            suggested_specialist=result.get("suggested_specialist", "General Physician")
+            assessment=assessment_text,
+            risk_level=risk_level_text,
+            suggested_specialist=specialist_text
         )
         history_dict = history.model_dump()
         history_dict["created_at"] = history_dict["created_at"].isoformat()
-        await db.ai_assessments.insert_one(history_dict)
+        
+        # Create a copy for MongoDB
+        insert_dict = {k: v for k, v in history_dict.items()}
+        await db.ai_assessments.insert_one(insert_dict)
         
         return AISymptomResponse(
-            assessment=result.get("assessment", ""),
-            risk_level=result.get("risk_level", "Medium"),
-            suggested_specialist=result.get("suggested_specialist", "General Physician"),
-            lifestyle_advice=result.get("lifestyle_advice", ""),
-            emergency_alert=result.get("emergency_alert", False)
+            assessment=assessment_text,
+            risk_level=risk_level_text,
+            suggested_specialist=specialist_text,
+            lifestyle_advice=lifestyle_text,
+            emergency_alert=emergency
         )
     except Exception as e:
         logging.error(f"AI assessment error: {str(e)}")
