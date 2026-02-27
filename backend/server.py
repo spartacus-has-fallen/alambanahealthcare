@@ -456,15 +456,10 @@ async def delete_health_record(record_id: str, payload: dict = Depends(verify_to
 # ========== AI SYMPTOM CHECKER ==========
 
 @api_router.post("/ai/symptom-check", response_model=AISymptomResponse)
-async def ai_symptom_check(symptom_data: AISymptomCheck, credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
+async def ai_symptom_check(symptom_data: AISymptomCheck):
     # Try to get user if authenticated, but don't require it
     user_id = None
-    try:
-        if credentials:
-            payload = verify_token(credentials)
-            user_id = payload.get("id")
-    except:
-        pass
+    # Note: Authentication is optional for this endpoint
     
     # Initialize AI chat
     llm_key = os.environ.get('EMERGENT_LLM_KEY')
