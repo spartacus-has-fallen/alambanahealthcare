@@ -148,6 +148,8 @@ class HealthRecordCreate(BaseModel):
     sugar_level: Optional[float] = None
     heart_rate: Optional[int] = None
     notes: str = ""
+    report_file_base64: Optional[str] = None
+    report_file_name: Optional[str] = None
 
 class AISymptomCheck(BaseModel):
     symptoms: str
