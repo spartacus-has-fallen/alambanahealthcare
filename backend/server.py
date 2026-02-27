@@ -208,6 +208,40 @@ class PaymentCreate(BaseModel):
     appointment_id: str
     amount: float
 
+class ChatMessage(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    appointment_id: str
+    sender_id: str
+    sender_role: str  # patient, doctor
+    message: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class ChatMessageCreate(BaseModel):
+    appointment_id: str
+    message: str
+
+class Prescription(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    appointment_id: str
+    doctor_id: str
+    patient_id: str
+    diagnosis: str
+    medications: List[str] = []
+    instructions: str = ""
+    follow_up_date: Optional[str] = None
+    prescription_file_base64: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class PrescriptionCreate(BaseModel):
+    appointment_id: str
+    diagnosis: str
+    medications: List[str] = []
+    instructions: str = ""
+    follow_up_date: Optional[str] = None
+
+
 # ========== HELPER FUNCTIONS ==========
 
 def create_access_token(data: dict):
