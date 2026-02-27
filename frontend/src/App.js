@@ -37,13 +37,13 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/blogs" element={<BlogPage />} />
+          <Route path="/ai-checker" element={<AISymptomChecker />} />
           
           {/* Protected Routes */}
           <Route path="/patient/dashboard" element={<ProtectedRoute><PatientDashboard /></ProtectedRoute>} />
           <Route path="/doctor/dashboard" element={<ProtectedRoute><DoctorDashboard /></ProtectedRoute>} />
           <Route path="/admin/dashboard" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
           <Route path="/doctors" element={<ProtectedRoute><DoctorSearch /></ProtectedRoute>} />
-          <Route path="/ai-checker" element={<ProtectedRoute><AISymptomChecker /></ProtectedRoute>} />
           <Route path="/health-records" element={<ProtectedRoute><HealthRecords /></ProtectedRoute>} />
           <Route path="/referral" element={<ProtectedRoute><ReferralPage /></ProtectedRoute>} />
         </Routes>
