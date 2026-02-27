@@ -72,7 +72,9 @@ const HealthRecords = () => {
         oxygen_level: '',
         sugar_level: '',
         heart_rate: '',
-        notes: ''
+        notes: '',
+        report_file_base64: '',
+        report_file_name: ''
       });
     } catch (error) {
       toast.error('Failed to add health record');
