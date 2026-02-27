@@ -182,6 +182,8 @@ class BlogPost(BaseModel):
     category: str
     tags: List[str] = []
     is_published: bool = False
+    is_featured: bool = False
+    featured_image_base64: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -191,6 +193,8 @@ class BlogPostCreate(BaseModel):
     category: str
     tags: List[str] = []
     is_published: bool = False
+    is_featured: bool = False
+    featured_image_base64: Optional[str] = None
 
 class Payment(BaseModel):
     model_config = ConfigDict(extra="ignore")
