@@ -19,6 +19,7 @@ import AISymptomChecker from '@/pages/AISymptomChecker';
 import HealthRecords from '@/pages/HealthRecords';
 import ReferralPage from '@/pages/ReferralPage';
 import BlogPage from '@/pages/BlogPage';
+import IntegrationControlPanel from '@/pages/IntegrationControlPanel';
 
 // Components
 import WhatsAppButton from '@/components/WhatsAppButton';
@@ -46,6 +47,7 @@ function App() {
           <Route path="/doctors" element={<ProtectedRoute><DoctorSearch /></ProtectedRoute>} />
           <Route path="/health-records" element={<ProtectedRoute><HealthRecords /></ProtectedRoute>} />
           <Route path="/referral" element={<ProtectedRoute><ReferralPage /></ProtectedRoute>} />
+          <Route path="/admin/integrations" element={<ProtectedRoute><IntegrationControlPanel /></ProtectedRoute>} />
         </Routes>
         
         <WhatsAppButton />
