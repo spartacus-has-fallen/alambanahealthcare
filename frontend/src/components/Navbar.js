@@ -90,6 +90,7 @@ const Navbar = () => {
           <div className="md:hidden py-4 border-t border-slate-200" data-testid="mobile-menu">
             <div className="flex flex-col gap-4">
               <Link to="/about" className="text-slate-600 hover:text-primary transition-colors">About</Link>
+              <Link to="/contact" className="text-slate-600 hover:text-primary transition-colors">Contact</Link>
               <Link to="/blogs" className="text-slate-600 hover:text-primary transition-colors">Blog</Link>
               {isLoggedIn ? (
                 <>
