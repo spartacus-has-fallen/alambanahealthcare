@@ -48,6 +48,14 @@ const AdminDashboard = () => {
         <div className="mb-8">
           <h1 className="text-3xl font-bold mb-2">Admin Dashboard</h1>
           <p className="text-slate-600">Platform overview and management</p>
+          <div className="mt-4">
+            <Link to="/admin/integrations">
+              <Button variant="outline" className="gap-2" data-testid="integrations-link">
+                <Settings className="h-4 w-4" />
+                Integration Control Panel
+              </Button>
+            </Link>
+          </div>
         </div>
 
         {/* Analytics Cards */}
