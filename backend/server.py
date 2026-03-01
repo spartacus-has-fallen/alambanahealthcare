@@ -238,6 +238,38 @@ class Prescription(BaseModel):
     prescription_file_base64: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+class Rating(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    patient_id: str
+    doctor_id: str
+    appointment_id: str
+    rating: int  # 1 to 5
+    review: str = ""
+    is_hidden: bool = False
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class RatingCreate(BaseModel):
+    appointment_id: str
+    rating: int
+    review: str = ""
+
+class FeatureFlag(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    feature_name: str
+    display_name: str
+    is_enabled: bool = False
+    description: str = ""
+    estimated_cost: str = ""
+    config: Dict[str, Any] = {}
+    last_modified: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class FeatureFlagUpdate(BaseModel):
+    is_enabled: bool
+    config: Optional[Dict[str, Any]] = None
+
+
 class PrescriptionCreate(BaseModel):
     appointment_id: str
     diagnosis: str
