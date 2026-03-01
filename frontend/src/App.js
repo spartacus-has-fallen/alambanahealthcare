@@ -25,11 +25,13 @@ import ContactPage from '@/pages/ContactPage';
 // Components
 import WhatsAppButton from '@/components/WhatsAppButton';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import ScrollToTop from '@/components/ScrollToTop';
 
 function App() {
   return (
     <div className="App">
       <BrowserRouter>
+        <ScrollToTop />
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/about" element={<AboutPage />} />
