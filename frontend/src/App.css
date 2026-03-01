@@ -58,3 +58,13 @@ h1, h2, h3, h4, h5, h6 {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Hide Emergent badge */
+div[style*="z-index: 2147483647"],
+div[style*="position: fixed"][style*="bottom"],
+div[style*="position: fixed"][style*="right"] img[alt*="emergent"],
+a[href*="emergent"] img {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
