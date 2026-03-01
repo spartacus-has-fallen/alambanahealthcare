@@ -26,6 +26,7 @@ const Footer = () => {
             <h4 className="text-white font-semibold mb-4">Quick Links</h4>
             <ul className="space-y-2 text-sm">
               <li><Link to="/about" className="hover:text-primary transition-colors">About Us</Link></li>
+              <li><Link to="/contact" className="hover:text-primary transition-colors">Contact Us</Link></li>
               <li><Link to="/doctors" className="hover:text-primary transition-colors">Find Doctors</Link></li>
               <li><Link to="/ai-checker" className="hover:text-primary transition-colors">AI Symptom Checker</Link></li>
               <li><Link to="/blogs" className="hover:text-primary transition-colors">Blog</Link></li>
@@ -47,12 +48,10 @@ const Footer = () => {
             <h4 className="text-white font-semibold mb-4">Contact</h4>
             <ul className="space-y-2 text-sm">
               <li className="flex items-center gap-2">
-                <Phone className="h-4 w-4" />
-                <span>8084161465</span>
-              </li>
-              <li className="flex items-center gap-2">
                 <Mail className="h-4 w-4" />
-                <span>support@alambana.health</span>
+                <a href="mailto:info@alambanahealthcare.com" className="hover:text-primary transition-colors">
+                  info@alambanahealthcare.com
+                </a>
               </li>
             </ul>
           </div>
