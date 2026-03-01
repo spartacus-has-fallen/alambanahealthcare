@@ -38,6 +38,7 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/blogs" element={<BlogPage />} />
+          <Route path="/contact" element={<ContactPage />} />
           <Route path="/ai-checker" element={<AISymptomChecker />} />
           
           {/* Protected Routes */}
