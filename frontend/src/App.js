@@ -20,6 +20,7 @@ import HealthRecords from '@/pages/HealthRecords';
 import ReferralPage from '@/pages/ReferralPage';
 import BlogPage from '@/pages/BlogPage';
 import IntegrationControlPanel from '@/pages/IntegrationControlPanel';
+import ContactPage from '@/pages/ContactPage';
 
 // Components
 import WhatsAppButton from '@/components/WhatsAppButton';
