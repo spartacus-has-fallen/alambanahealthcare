@@ -450,7 +450,10 @@ async def create_appointment(appointment_data: AppointmentCreate, payload: dict 
     appointment_dict = appointment.model_dump()
     appointment_dict["created_at"] = appointment_dict["created_at"].isoformat()
     
-    await db.appointments.insert_one(appointment_dict)
+    # Create a copy for MongoDB
+    insert_dict = {k: v for k, v in appointment_dict.items()}
+    await db.appointments.insert_one(insert_dict)
+    
     return appointment_dict
 
 @api_router.get("/appointments")
