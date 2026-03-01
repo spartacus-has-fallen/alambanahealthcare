@@ -110,7 +110,7 @@ const TermsPage = () => {
             <h2 className="text-2xl font-semibold mt-8 mb-4">11. Contact Information</h2>
             <p>For questions about these terms, contact us at:</p>
             <p className="mt-2">
-              Email: <a href="mailto:support@alambana.health" className="text-primary hover:underline">support@alambana.health</a><br />
+              Email: <a href="mailto:info@alambanahealthcare.com" className="text-primary hover:underline">info@alambanahealthcare.com</a><br />
               Phone: 8084161465
             </p>
           </section>

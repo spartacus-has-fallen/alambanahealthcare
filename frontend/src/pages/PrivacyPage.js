@@ -99,7 +99,7 @@ const PrivacyPage = () => {
             <h2 className="text-2xl font-semibold mt-8 mb-4">9. Contact for Privacy Concerns</h2>
             <p>For any privacy-related queries or concerns, please contact us at:</p>
             <p className="mt-2">
-              Email: <a href="mailto:privacy@alambana.health" className="text-primary hover:underline">privacy@alambana.health</a><br />
+              Email: <a href="mailto:info@alambanahealthcare.com" className="text-primary hover:underline">info@alambanahealthcare.com</a><br />
               Phone: 8084161465
             </p>
           </section>
