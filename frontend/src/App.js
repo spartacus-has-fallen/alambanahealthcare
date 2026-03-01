@@ -35,6 +35,7 @@ function App() {
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/disclaimer" element={<DisclaimerPage />} />
+          <Route path="/contact" element={<ContactPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/blogs" element={<BlogPage />} />
