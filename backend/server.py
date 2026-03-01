@@ -1094,6 +1094,297 @@ async def get_blog_categories():
     return categories
 
 
+
+# ========== RATING & REVIEW ROUTES ==========
+
+@api_router.post("/ratings")
+async def create_rating(rating_data: RatingCreate, payload: dict = Depends(verify_token)):
+    # Only patients can give ratings
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "patient":
+        raise HTTPException(status_code=403, detail="Only patients can give ratings")
+    
+    # Get appointment and verify
+    appointment = await db.appointments.find_one({"id": rating_data.appointment_id}, {"_id": 0})
+    if not appointment:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    
+    if appointment["patient_id"] != payload["id"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    if appointment["status"] != "completed":
+        raise HTTPException(status_code=400, detail="Can only rate completed consultations")
+    
+    if appointment.get("payment_status") != "completed":
+        raise HTTPException(status_code=400, detail="Payment must be completed to rate")
+    
+    # Check if already rated
+    existing = await db.ratings.find_one({"appointment_id": rating_data.appointment_id}, {"_id": 0})
+    if existing:
+        # Check if within 24 hours
+        created_time = datetime.fromisoformat(existing["created_at"])
+        if (datetime.now(timezone.utc) - created_time).total_seconds() > 86400:
+            raise HTTPException(status_code=400, detail="Cannot edit rating after 24 hours")
+        # Update existing
+        await db.ratings.update_one(
+            {"appointment_id": rating_data.appointment_id},
+            {"$set": {"rating": rating_data.rating, "review": rating_data.review}}
+        )
+        existing["rating"] = rating_data.rating
+        existing["review"] = rating_data.review
+        
+        # Recalculate doctor average
+        await recalculate_doctor_rating(appointment["doctor_id"])
+        
+        return existing
+    
+    # Create new rating
+    rating = Rating(
+        patient_id=payload["id"],
+        doctor_id=appointment["doctor_id"],
+        appointment_id=rating_data.appointment_id,
+        rating=rating_data.rating,
+        review=rating_data.review
+    )
+    rating_dict = rating.model_dump()
+    rating_dict["created_at"] = rating_dict["created_at"].isoformat()
+    
+    insert_dict = {k: v for k, v in rating_dict.items()}
+    await db.ratings.insert_one(insert_dict)
+    
+    # Update doctor's average rating
+    await recalculate_doctor_rating(appointment["doctor_id"])
+    
+    return rating_dict
+
+async def recalculate_doctor_rating(doctor_id: str):
+    # Get all non-hidden ratings for this doctor
+    ratings = await db.ratings.find({"doctor_id": doctor_id, "is_hidden": False}, {"_id": 0, "rating": 1}).to_list(1000)
+    
+    if ratings:
+        avg_rating = sum(r["rating"] for r in ratings) / len(ratings)
+        total_reviews = len(ratings)
+    else:
+        avg_rating = 0.0
+        total_reviews = 0
+    
+    # Update doctor profile
+    await db.doctor_profiles.update_one(
+        {"id": doctor_id},
+        {"$set": {"rating": round(avg_rating, 1), "total_consultations": total_reviews}}
+    )
+
+@api_router.get("/ratings/doctor/{doctor_id}")
+async def get_doctor_ratings(doctor_id: str, sort: str = "latest", limit: int = 5):
+    # Get ratings (only non-hidden)
+    query = {"doctor_id": doctor_id, "is_hidden": False}
+    
+    # Sort logic
+    if sort == "highest":
+        sort_field = [("rating", -1), ("created_at", -1)]
+    elif sort == "lowest":
+        sort_field = [("rating", 1), ("created_at", -1)]
+    else:  # latest
+        sort_field = [("created_at", -1)]
+    
+    ratings = await db.ratings.find(query, {"_id": 0}).sort(sort_field).limit(limit).to_list(limit)
+    
+    # Enrich with patient names
+    for rating in ratings:
+        patient = await db.users.find_one({"id": rating["patient_id"]}, {"_id": 0, "name": 1})
+        if patient:
+            rating["patient_name"] = patient["name"]
+            rating["verified_patient"] = True  # All ratings from completed appointments are verified
+    
+    # Get summary
+    all_ratings = await db.ratings.find(query, {"_id": 0, "rating": 1}).to_list(1000)
+    summary = {
+        "average_rating": round(sum(r["rating"] for r in all_ratings) / len(all_ratings), 1) if all_ratings else 0,
+        "total_reviews": len(all_ratings),
+        "five_star": len([r for r in all_ratings if r["rating"] == 5]),
+        "four_star": len([r for r in all_ratings if r["rating"] == 4]),
+        "three_star": len([r for r in all_ratings if r["rating"] == 3]),
+        "two_star": len([r for r in all_ratings if r["rating"] == 2]),
+        "one_star": len([r for r in all_ratings if r["rating"] == 1])
+    }
+    
+    return {
+        "ratings": ratings,
+        "summary": summary
+    }
+
+@api_router.put("/admin/ratings/{rating_id}/hide")
+async def hide_rating(rating_id: str, hide: bool, payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    rating = await db.ratings.find_one({"id": rating_id}, {"_id": 0})
+    if not rating:
+        raise HTTPException(status_code=404, detail="Rating not found")
+    
+    await db.ratings.update_one({"id": rating_id}, {"$set": {"is_hidden": hide}})
+    
+    # Recalculate doctor rating
+    await recalculate_doctor_rating(rating["doctor_id"])
+    
+    return {"message": "Rating visibility updated"}
+
+@api_router.delete("/admin/ratings/{rating_id}")
+async def delete_rating(rating_id: str, payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    rating = await db.ratings.find_one({"id": rating_id}, {"_id": 0})
+    if not rating:
+        raise HTTPException(status_code=404, detail="Rating not found")
+    
+    await db.ratings.delete_one({"id": rating_id})
+    
+    # Recalculate doctor rating
+    await recalculate_doctor_rating(rating["doctor_id"])
+    
+    return {"message": "Rating deleted"}
+
+@api_router.get("/admin/ratings/all")
+async def get_all_ratings(payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    ratings = await db.ratings.find({}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    
+    # Enrich with patient and doctor names
+    for rating in ratings:
+        patient = await db.users.find_one({"id": rating["patient_id"]}, {"_id": 0, "name": 1})
+        doctor_profile = await db.doctor_profiles.find_one({"id": rating["doctor_id"]}, {"_id": 0, "user_id": 1})
+        if doctor_profile:
+            doctor = await db.users.find_one({"id": doctor_profile["user_id"]}, {"_id": 0, "name": 1})
+            if doctor:
+                rating["doctor_name"] = doctor["name"]
+        if patient:
+            rating["patient_name"] = patient["name"]
+    
+    return ratings
+
+# ========== FEATURE FLAG ROUTES ==========
+
+@api_router.get("/admin/feature-flags")
+async def get_feature_flags(payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    flags = await db.feature_flags.find({}, {"_id": 0}).to_list(100)
+    
+    # If no flags exist, initialize default ones
+    if not flags:
+        default_flags = [
+            {
+                "id": str(uuid.uuid4()),
+                "feature_name": "video_consultation",
+                "display_name": "Video Consultation",
+                "is_enabled": False,
+                "description": "Agora/Twilio/Whereby video calling integration",
+                "estimated_cost": "₹2000-5000/month",
+                "config": {},
+                "last_modified": datetime.now(timezone.utc).isoformat()
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "feature_name": "cloud_storage",
+                "display_name": "Cloud Storage (S3)",
+                "is_enabled": False,
+                "description": "AWS S3 or compatible storage for files",
+                "estimated_cost": "₹500-2000/month",
+                "config": {},
+                "last_modified": datetime.now(timezone.utc).isoformat()
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "feature_name": "sms_notifications",
+                "display_name": "SMS Notifications",
+                "is_enabled": False,
+                "description": "Twilio/MSG91 SMS service",
+                "estimated_cost": "₹1000-3000/month",
+                "config": {},
+                "last_modified": datetime.now(timezone.utc).isoformat()
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "feature_name": "premium_email",
+                "display_name": "Premium Email Service",
+                "is_enabled": False,
+                "description": "SendGrid/AWS SES professional emails",
+                "estimated_cost": "₹1000-2000/month",
+                "config": {},
+                "last_modified": datetime.now(timezone.utc).isoformat()
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "feature_name": "subscription_plans",
+                "display_name": "Subscription Plans",
+                "is_enabled": False,
+                "description": "Monthly subscription for patients",
+                "estimated_cost": "No extra cost",
+                "config": {},
+                "last_modified": datetime.now(timezone.utc).isoformat()
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "feature_name": "medicine_store",
+                "display_name": "Medicine Store Integration",
+                "is_enabled": False,
+                "description": "Online medicine ordering",
+                "estimated_cost": "Coming Soon",
+                "config": {},
+                "last_modified": datetime.now(timezone.utc).isoformat()
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "feature_name": "lab_integration",
+                "display_name": "Lab Test Integration",
+                "is_enabled": False,
+                "description": "Book lab tests online",
+                "estimated_cost": "Coming Soon",
+                "config": {},
+                "last_modified": datetime.now(timezone.utc).isoformat()
+            }
+        ]
+        
+        await db.feature_flags.insert_many(default_flags)
+        flags = default_flags
+    
+    return flags
+
+@api_router.put("/admin/feature-flags/{feature_id}")
+async def update_feature_flag(feature_id: str, update_data: FeatureFlagUpdate, payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    update_dict = {"is_enabled": update_data.is_enabled, "last_modified": datetime.now(timezone.utc).isoformat()}
+    if update_data.config:
+        update_dict["config"] = update_data.config
+    
+    result = await db.feature_flags.update_one(
+        {"id": feature_id},
+        {"$set": update_dict}
+    )
+    
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Feature flag not found")
+    
+    return {"message": "Feature flag updated successfully"}
+
+@api_router.get("/feature-flags/public")
+async def get_public_feature_flags():
+    # Public endpoint to check which features are enabled
+    flags = await db.feature_flags.find({}, {"_id": 0, "feature_name": 1, "is_enabled": 1, "display_name": 1}).to_list(100)
+    return {flag["feature_name"]: flag["is_enabled"] for flag in flags}
+
+
 # Include the router in the main app
 app.include_router(api_router)
 
