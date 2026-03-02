@@ -564,7 +564,7 @@ async def ai_symptom_check(symptom_data: AISymptomCheck):
     try:
         client = AsyncOpenAI(api_key=llm_key)
         completion = await client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": user_prompt}
