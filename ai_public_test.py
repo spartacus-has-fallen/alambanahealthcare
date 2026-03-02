@@ -3,7 +3,7 @@ import json
 
 def test_ai_symptom_checker_public():
     """Test AI symptom checker without authentication (public endpoint)"""
-    url = "https://digital-medcare-1.preview.emergentagent.com/api/ai/symptom-check"
+    url = "http://localhost:8000/api/ai/symptom-check"
     
     symptom_data = {
         "symptoms": "I have been experiencing headache and fever for the past 2 days",

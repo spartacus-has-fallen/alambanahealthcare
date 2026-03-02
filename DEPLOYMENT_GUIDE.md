@@ -131,10 +131,10 @@ REACT_APP_BACKEND_URL=https://your-backend-url.com
 MONGO_URL=your_mongodb_connection_string
 DB_NAME=alambana_healthcare
 CORS_ORIGINS=https://yourdomain.com
-EMERGENT_LLM_KEY=sk-emergent-1B5E7F962641fF576A
+OPENAI_API_KEY=your_openai_api_key
 JWT_SECRET_KEY=your_secure_secret_key
-RAZORPAY_KEY_ID=rzp_live_SLsf8PIFwbx9Xo
-RAZORPAY_KEY_SECRET=kQSr6dlYoJUIA0acCspvE8Tq
+RAZORPAY_KEY_ID=your_razorpay_key_id
+RAZORPAY_KEY_SECRET=your_razorpay_key_secret
 ```
 
 ## Post-Deployment Checklist

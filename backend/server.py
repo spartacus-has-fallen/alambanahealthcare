@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 import jwt
 import bcrypt
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+from openai import AsyncOpenAI
 import razorpay
 import base64
 
@@ -538,40 +538,40 @@ async def ai_symptom_check(symptom_data: AISymptomCheck):
     user_id = None
     # Note: Authentication is optional for this endpoint
     
-    # Initialize AI chat
-    llm_key = os.environ.get('EMERGENT_LLM_KEY')
+    # Initialize AI client
+    llm_key = os.environ.get('OPENAI_API_KEY')
     if not llm_key:
         raise HTTPException(status_code=500, detail="AI service not configured")
-    
-    system_message = """You are a medical AI assistant for preliminary health assessment. 
+
+    system_message = """You are a medical AI assistant for preliminary health assessment.
     Analyze symptoms and provide:
     1. Possible conditions (emphasize this is NOT a diagnosis)
     2. Risk level (Low/Medium/High/Emergency)
     3. Suggested specialist to consult
     4. Lifestyle advice
     5. Whether emergency care is needed
-    
+
     Format your response as JSON with keys: assessment, risk_level, suggested_specialist, lifestyle_advice, emergency_alert (boolean)
     Always include medical disclaimer."""
-    
-    session_id = f"symptom_check_{user_id or 'guest'}_{datetime.now(timezone.utc).timestamp()}"
-    chat = LlmChat(
-        api_key=llm_key,
-        session_id=session_id,
-        system_message=system_message
-    ).with_model("openai", "gpt-5.2")
-    
+
     user_prompt = f"Patient symptoms: {symptom_data.symptoms}\n"
     if symptom_data.age:
         user_prompt += f"Age: {symptom_data.age}\n"
     if symptom_data.gender:
         user_prompt += f"Gender: {symptom_data.gender}\n"
     user_prompt += "Please analyze and provide assessment in JSON format."
-    
-    user_message = UserMessage(text=user_prompt)
-    
+
     try:
-        response = await chat.send_message(user_message)
+        client = AsyncOpenAI(api_key=llm_key)
+        completion = await client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.3
+        )
+        response = completion.choices[0].message.content
         
         # Parse response
         import json
