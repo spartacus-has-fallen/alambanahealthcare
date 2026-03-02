@@ -30,7 +30,17 @@ const DoctorSearch = () => {
   }, []);
 
   useEffect(() => {
-    filterDoctors();
+    let filtered = doctors;
+    if (specialtyFilter !== 'all') {
+      filtered = filtered.filter(doc => doc.specialization === specialtyFilter);
+    }
+    if (searchQuery) {
+      filtered = filtered.filter(doc =>
+        doc.user?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        doc.specialization.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    }
+    setFilteredDoctors(filtered);
   }, [doctors, searchQuery, specialtyFilter]);
 
   const fetchDoctors = async () => {
@@ -40,23 +50,6 @@ const DoctorSearch = () => {
     } catch (error) {
       toast.error('Failed to load doctors');
     }
-  };
-
-  const filterDoctors = () => {
-    let filtered = doctors;
-    
-    if (specialtyFilter !== 'all') {
-      filtered = filtered.filter(doc => doc.specialization === specialtyFilter);
-    }
-    
-    if (searchQuery) {
-      filtered = filtered.filter(doc => 
-        doc.user?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        doc.specialization.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-    
-    setFilteredDoctors(filtered);
   };
 
   const handleBookAppointment = (doctor) => {
