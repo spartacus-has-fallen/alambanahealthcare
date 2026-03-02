@@ -20,7 +20,7 @@ const DoctorRatings = ({ doctorId }) => {
       setRatings(response.data.ratings);
       setSummary(response.data.summary);
     } catch (error) {
-      console.error('Failed to load ratings');
+      // silently ignore failed rating loads — non-critical UI
     } finally {
       setLoading(false);
     }

@@ -53,7 +53,7 @@ const DoctorDashboard = () => {
       const appointmentsRes = await api.get('/appointments');
       setAppointments(appointmentsRes.data);
     } catch (error) {
-      console.error('Failed to load appointments');
+      toast.error('Failed to load appointments');
     }
   };
 
@@ -82,7 +82,7 @@ const DoctorDashboard = () => {
 
   const updateAppointmentStatus = async (appointmentId, status) => {
     try {
-      await api.put(`/appointments/${appointmentId}/status?status=${status}`);
+      await api.put(`/appointments/${appointmentId}/status`, null, { params: { status } });
       toast.success('Appointment status updated');
       fetchDoctorData();
     } catch (error) {

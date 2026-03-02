@@ -37,7 +37,7 @@ const AISymptomChecker = () => {
       } catch (authError) {
         // If authentication fails, try without token
         const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-        response = await fetch(`${BACKEND_URL}/api/ai/symptom-check`, {
+        const res = await fetch(`${BACKEND_URL}/api/ai/symptom-check`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -45,7 +45,10 @@ const AISymptomChecker = () => {
             age: age ? parseInt(age) : null,
             gender: gender || null
           })
-        }).then(r => r.json()).then(data => ({ data }));
+        });
+        if (!res.ok) throw new Error(`Server error: ${res.status}`);
+        const data = await res.json();
+        response = { data };
       }
       setResult(response.data);
     } catch (error) {

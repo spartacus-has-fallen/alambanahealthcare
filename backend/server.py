@@ -25,7 +25,9 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 # JWT Configuration
-JWT_SECRET = os.environ.get('JWT_SECRET_KEY', 'default_secret_key')
+JWT_SECRET = os.environ.get('JWT_SECRET_KEY')
+if not JWT_SECRET:
+    raise ValueError("JWT_SECRET_KEY environment variable must be set")
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = 30
 
@@ -582,7 +584,7 @@ async def ai_symptom_check(symptom_data: AISymptomCheck):
         
         try:
             result = json.loads(response_text)
-        except:
+        except (json.JSONDecodeError, ValueError):
             # If JSON parsing fails, create structured response from text
             result = {
                 "assessment": response_text,
@@ -1394,7 +1396,7 @@ app.include_router(api_router)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_origins=os.environ.get('CORS_ORIGINS', 'http://localhost:3000').split(','),
     allow_methods=["*"],
     allow_headers=["*"],
 )
