@@ -11,20 +11,19 @@ const DoctorRatings = ({ doctorId }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const fetchRatings = async () => {
+      try {
+        const response = await api.get(`/ratings/doctor/${doctorId}?sort=${sortBy}&limit=10`);
+        setRatings(response.data.ratings);
+        setSummary(response.data.summary);
+      } catch (error) {
+        // silently ignore failed rating loads — non-critical UI
+      } finally {
+        setLoading(false);
+      }
+    };
     fetchRatings();
   }, [doctorId, sortBy]);
-
-  const fetchRatings = async () => {
-    try {
-      const response = await api.get(`/ratings/doctor/${doctorId}?sort=${sortBy}&limit=10`);
-      setRatings(response.data.ratings);
-      setSummary(response.data.summary);
-    } catch (error) {
-      // silently ignore failed rating loads — non-critical UI
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const renderStars = (rating) => {
     return (
