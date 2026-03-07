@@ -1,10 +1,15 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, UploadFile, File
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, UploadFile, File, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
+import smtplib
+import hmac
+import hashlib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
 from typing import List, Optional, Dict, Any
@@ -34,10 +39,23 @@ ACCESS_TOKEN_EXPIRE_DAYS = 30
 # Razorpay Configuration
 RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID', '')
 RAZORPAY_KEY_SECRET = os.environ.get('RAZORPAY_KEY_SECRET', '')
+RAZORPAY_WEBHOOK_SECRET = os.environ.get('RAZORPAY_WEBHOOK_SECRET', '')
 if RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET:
     razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 else:
     razorpay_client = None
+
+# Email Configuration
+SMTP_HOST = os.environ.get('SMTP_HOST', 'smtp.gmail.com')
+SMTP_PORT = int(os.environ.get('SMTP_PORT', '587'))
+SMTP_USER = os.environ.get('SMTP_USER', '')
+SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD', '')
+FROM_EMAIL = os.environ.get('FROM_EMAIL', SMTP_USER)
+ADMIN_EMAIL = os.environ.get('ADMIN_EMAIL', SMTP_USER)
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
+
+# AI Rate Limiting (in-memory: {identifier: [timestamps]})
+ai_rate_limit: Dict[str, List[float]] = {}
 
 # Security
 security = HTTPBearer()
@@ -279,6 +297,23 @@ class PrescriptionCreate(BaseModel):
     instructions: str = ""
     follow_up_date: Optional[str] = None
 
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str
+
+class ContactMessage(BaseModel):
+    name: str
+    email: EmailStr
+    subject: str
+    message: str
+
+class AppointmentReschedule(BaseModel):
+    new_date: str
+    new_time: str
+
 
 # ========== HELPER FUNCTIONS ==========
 
@@ -304,6 +339,37 @@ def hash_password(password: str) -> str:
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+
+def send_email(to: str, subject: str, html_body: str):
+    """Send email via SMTP. Silently logs errors to avoid crashing request handlers."""
+    if not SMTP_USER or not SMTP_PASSWORD:
+        logging.warning("Email not configured — skipping send to %s", to)
+        return
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = FROM_EMAIL
+        msg["To"] = to
+        msg.attach(MIMEText(html_body, "html"))
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as server:
+            server.ehlo()
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASSWORD)
+            server.sendmail(FROM_EMAIL, to, msg.as_string())
+    except Exception as e:
+        logging.error("Failed to send email to %s: %s", to, str(e))
+
+def check_ai_rate_limit(identifier: str) -> bool:
+    """Returns True if request is allowed, False if rate limited (5 req/hour)."""
+    import time
+    now = time.time()
+    hour_ago = now - 3600
+    timestamps = [t for t in ai_rate_limit.get(identifier, []) if t > hour_ago]
+    if len(timestamps) >= 5:
+        return False
+    timestamps.append(now)
+    ai_rate_limit[identifier] = timestamps
+    return True
 
 # ========== AUTHENTICATION ROUTES ==========
 
@@ -335,10 +401,11 @@ async def register(user_data: UserRegister, referred_by: Optional[str] = None):
             )
     
     await db.users.insert_one(user_dict)
-    
+    user_dict.pop("_id", None)
+
     # Create token
     token = create_access_token({"id": user.id, "email": user.email, "role": user.role})
-    
+
     return {
         "token": token,
         "user": {k: v for k, v in user_dict.items() if k != "password"}
@@ -366,6 +433,54 @@ async def get_current_user(payload: dict = Depends(verify_token)):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user
+
+@api_router.post("/auth/forgot-password")
+async def forgot_password(request_data: PasswordResetRequest):
+    user = await db.users.find_one({"email": request_data.email}, {"_id": 0})
+    # Always return success to avoid email enumeration
+    if user:
+        token = str(uuid.uuid4())
+        expires_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        await db.password_reset_tokens.insert_one({
+            "token": token,
+            "email": request_data.email,
+            "expires_at": expires_at,
+            "used": False
+        })
+        reset_link = f"{FRONTEND_URL}/reset-password?token={token}"
+        send_email(
+            to=request_data.email,
+            subject="Reset your Alambana Healthcare password",
+            html_body=f"""
+            <div style="font-family:Inter,sans-serif;max-width:500px;margin:auto;padding:32px">
+              <h2 style="color:#0D9488">Alambana Healthcare</h2>
+              <p>Hi {user.get('name', '')},</p>
+              <p>We received a request to reset your password. Click the button below to set a new password.
+              This link expires in <strong>1 hour</strong>.</p>
+              <a href="{reset_link}" style="display:inline-block;margin:16px 0;padding:12px 24px;background:#0D9488;color:#fff;border-radius:999px;text-decoration:none;font-weight:600">
+                Reset Password
+              </a>
+              <p style="color:#64748B;font-size:13px">If you didn't request this, ignore this email.</p>
+            </div>"""
+        )
+    return {"message": "If that email exists, a reset link has been sent."}
+
+@api_router.post("/auth/reset-password")
+async def reset_password(reset_data: PasswordResetConfirm):
+    token_doc = await db.password_reset_tokens.find_one({"token": reset_data.token}, {"_id": 0})
+    if not token_doc:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+    if token_doc.get("used"):
+        raise HTTPException(status_code=400, detail="Reset token already used")
+    expires_at = datetime.fromisoformat(token_doc["expires_at"])
+    if datetime.now(timezone.utc) > expires_at:
+        raise HTTPException(status_code=400, detail="Reset token has expired")
+    if len(reset_data.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    hashed = hash_password(reset_data.new_password)
+    await db.users.update_one({"email": token_doc["email"]}, {"$set": {"password": hashed}})
+    await db.password_reset_tokens.update_one({"token": reset_data.token}, {"$set": {"used": True}})
+    return {"message": "Password reset successfully"}
 
 # ========== DOCTOR ROUTES ==========
 
@@ -444,6 +559,16 @@ async def create_appointment(appointment_data: AppointmentCreate, payload: dict 
     if not doctor:
         raise HTTPException(status_code=404, detail="Doctor not found")
     
+    # Slot conflict detection
+    conflict = await db.appointments.find_one({
+        "doctor_id": appointment_data.doctor_id,
+        "appointment_date": appointment_data.appointment_date,
+        "appointment_time": appointment_data.appointment_time,
+        "status": {"$nin": ["cancelled"]}
+    }, {"_id": 0})
+    if conflict:
+        raise HTTPException(status_code=409, detail="This time slot is already booked. Please choose another time.")
+
     appointment = Appointment(
         patient_id=payload["id"],
         **appointment_data.model_dump(),
@@ -451,11 +576,11 @@ async def create_appointment(appointment_data: AppointmentCreate, payload: dict 
     )
     appointment_dict = appointment.model_dump()
     appointment_dict["created_at"] = appointment_dict["created_at"].isoformat()
-    
+
     # Create a copy for MongoDB
     insert_dict = {k: v for k, v in appointment_dict.items()}
     await db.appointments.insert_one(insert_dict)
-    
+
     return appointment_dict
 
 @api_router.get("/appointments")
@@ -533,11 +658,20 @@ async def delete_health_record(record_id: str, payload: dict = Depends(verify_to
 # ========== AI SYMPTOM CHECKER ==========
 
 @api_router.post("/ai/symptom-check", response_model=AISymptomResponse)
-async def ai_symptom_check(symptom_data: AISymptomCheck):
-    # Try to get user if authenticated, but don't require it
+async def ai_symptom_check(symptom_data: AISymptomCheck, request: Request, credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False))):
+    # Rate limiting: 5 requests per hour per IP (or per user if authenticated)
     user_id = None
-    # Note: Authentication is optional for this endpoint
-    
+    identifier = request.client.host if request.client else "unknown"
+    if credentials:
+        try:
+            payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+            user_id = payload.get("id")
+            identifier = user_id
+        except Exception:
+            pass
+    if not check_ai_rate_limit(identifier):
+        raise HTTPException(status_code=429, detail="Rate limit exceeded. Maximum 5 AI checks per hour.")
+
     # Initialize AI client
     llm_key = os.environ.get('OPENAI_API_KEY')
     if not llm_key:
@@ -648,6 +782,7 @@ async def create_blog(blog_data: BlogPostCreate, payload: dict = Depends(verify_
     blog_dict["updated_at"] = blog_dict["updated_at"].isoformat()
     
     await db.blogs.insert_one(blog_dict)
+    blog_dict.pop("_id", None)
     return blog_dict
 
 @api_router.get("/blogs")
@@ -1389,6 +1524,187 @@ async def get_public_feature_flags():
     flags = await db.feature_flags.find({}, {"_id": 0, "feature_name": 1, "is_enabled": 1, "display_name": 1}).to_list(100)
     return {flag["feature_name"]: flag["is_enabled"] for flag in flags}
 
+# ========== CONTACT FORM ==========
+
+@api_router.post("/contact")
+async def submit_contact(message_data: ContactMessage):
+    doc = {
+        "id": str(uuid.uuid4()),
+        "name": message_data.name,
+        "email": message_data.email,
+        "subject": message_data.subject,
+        "message": message_data.message,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.contact_messages.insert_one(doc)
+    send_email(
+        to=ADMIN_EMAIL,
+        subject=f"[Alambana Contact] {message_data.subject}",
+        html_body=f"""
+        <div style="font-family:Inter,sans-serif;max-width:600px;margin:auto;padding:32px">
+          <h2 style="color:#0D9488">New Contact Message</h2>
+          <p><strong>From:</strong> {message_data.name} &lt;{message_data.email}&gt;</p>
+          <p><strong>Subject:</strong> {message_data.subject}</p>
+          <hr/>
+          <p style="white-space:pre-wrap">{message_data.message}</p>
+        </div>"""
+    )
+    send_email(
+        to=message_data.email,
+        subject="We received your message — Alambana Healthcare",
+        html_body=f"""
+        <div style="font-family:Inter,sans-serif;max-width:500px;margin:auto;padding:32px">
+          <h2 style="color:#0D9488">Alambana Healthcare</h2>
+          <p>Hi {message_data.name},</p>
+          <p>Thank you for reaching out! We've received your message and will respond within 24 hours.</p>
+          <p style="color:#64748B;font-size:13px">WhatsApp us at +91 8084161465 for faster support.</p>
+        </div>"""
+    )
+    return {"message": "Message received. We'll get back to you shortly."}
+
+# ========== RAZORPAY WEBHOOK ==========
+
+@app.post("/api/payments/webhook")
+async def razorpay_webhook(request: Request):
+    body = await request.body()
+    signature = request.headers.get("X-Razorpay-Signature", "")
+    if RAZORPAY_WEBHOOK_SECRET:
+        expected = hmac.new(
+            RAZORPAY_WEBHOOK_SECRET.encode(),
+            body,
+            hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(expected, signature):
+            raise HTTPException(status_code=400, detail="Invalid webhook signature")
+    import json as _json
+    event = _json.loads(body)
+    event_type = event.get("event")
+    if event_type == "payment.captured":
+        payment_entity = event.get("payload", {}).get("payment", {}).get("entity", {})
+        razorpay_order_id = payment_entity.get("order_id")
+        razorpay_payment_id = payment_entity.get("id")
+        if razorpay_order_id:
+            await db.payments.update_one(
+                {"razorpay_order_id": razorpay_order_id},
+                {"$set": {"razorpay_payment_id": razorpay_payment_id, "status": "completed"}}
+            )
+            payment = await db.payments.find_one({"razorpay_order_id": razorpay_order_id}, {"_id": 0})
+            if payment:
+                await db.appointments.update_one(
+                    {"id": payment["appointment_id"]},
+                    {"$set": {"payment_status": "completed", "payment_id": razorpay_payment_id, "status": "confirmed"}}
+                )
+    elif event_type == "payment.failed":
+        payment_entity = event.get("payload", {}).get("payment", {}).get("entity", {})
+        razorpay_order_id = payment_entity.get("order_id")
+        if razorpay_order_id:
+            await db.payments.update_one(
+                {"razorpay_order_id": razorpay_order_id},
+                {"$set": {"status": "failed"}}
+            )
+    return {"status": "ok"}
+
+# ========== APPOINTMENT CANCEL & RESCHEDULE ==========
+
+@api_router.put("/appointments/{appointment_id}/cancel")
+async def cancel_appointment(appointment_id: str, payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    appointment = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+    if not appointment:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    # Authorization check
+    if user["role"] == "patient" and appointment["patient_id"] != payload["id"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    if user["role"] == "doctor":
+        doc_profile = await db.doctor_profiles.find_one({"user_id": payload["id"]}, {"_id": 0})
+        if not doc_profile or appointment["doctor_id"] != doc_profile["id"]:
+            raise HTTPException(status_code=403, detail="Not authorized")
+    if appointment["status"] in ["completed", "cancelled"]:
+        raise HTTPException(status_code=400, detail=f"Cannot cancel a {appointment['status']} appointment")
+    update_fields = {
+        "status": "cancelled",
+        "cancelled_at": datetime.now(timezone.utc).isoformat(),
+        "cancelled_by": user["role"]
+    }
+    if appointment.get("payment_status") == "completed":
+        update_fields["payment_status"] = "refund_pending"
+    await db.appointments.update_one({"id": appointment_id}, {"$set": update_fields})
+    # Notify the other party
+    patient = await db.users.find_one({"id": appointment["patient_id"]}, {"_id": 0})
+    doctor_profile = await db.doctor_profiles.find_one({"id": appointment["doctor_id"]}, {"_id": 0})
+    doctor_user = await db.users.find_one({"id": doctor_profile["user_id"]}, {"_id": 0}) if doctor_profile else None
+    cancelled_by_name = user.get("name", "")
+    if patient:
+        send_email(
+            to=patient["email"],
+            subject="Appointment Cancelled — Alambana Healthcare",
+            html_body=f"""<div style="font-family:Inter,sans-serif;max-width:500px;margin:auto;padding:32px">
+              <h2 style="color:#EF4444">Appointment Cancelled</h2>
+              <p>Hi {patient.get('name','')}, your appointment on <strong>{appointment['appointment_date']}</strong>
+              at <strong>{appointment['appointment_time']}</strong> has been cancelled by {cancelled_by_name}.</p>
+              {"<p>A refund will be processed within 5-7 business days.</p>" if appointment.get('payment_status') == 'completed' else ""}
+              <p>Book a new appointment at <a href="{FRONTEND_URL}/doctors">Alambana Healthcare</a>.</p>
+            </div>"""
+        )
+    if doctor_user:
+        send_email(
+            to=doctor_user["email"],
+            subject="Appointment Cancelled — Alambana Healthcare",
+            html_body=f"""<div style="font-family:Inter,sans-serif;max-width:500px;margin:auto;padding:32px">
+              <h2 style="color:#EF4444">Appointment Cancelled</h2>
+              <p>Hi Dr. {doctor_user.get('name','')}, the appointment with patient
+              <strong>{patient.get('name','') if patient else ''}</strong> on
+              <strong>{appointment['appointment_date']}</strong> at
+              <strong>{appointment['appointment_time']}</strong> has been cancelled.</p>
+            </div>"""
+        )
+    return {"message": "Appointment cancelled successfully"}
+
+@api_router.put("/appointments/{appointment_id}/reschedule")
+async def reschedule_appointment(appointment_id: str, reschedule_data: AppointmentReschedule, payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    appointment = await db.appointments.find_one({"id": appointment_id}, {"_id": 0})
+    if not appointment:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    if user["role"] == "patient" and appointment["patient_id"] != payload["id"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    if appointment["status"] in ["completed", "cancelled"]:
+        raise HTTPException(status_code=400, detail="Cannot reschedule this appointment")
+    # Slot conflict check
+    conflict = await db.appointments.find_one({
+        "doctor_id": appointment["doctor_id"],
+        "appointment_date": reschedule_data.new_date,
+        "appointment_time": reschedule_data.new_time,
+        "status": {"$nin": ["cancelled"]},
+        "id": {"$ne": appointment_id}
+    }, {"_id": 0})
+    if conflict:
+        raise HTTPException(status_code=409, detail="This time slot is already booked")
+    await db.appointments.update_one(
+        {"id": appointment_id},
+        {"$set": {
+            "appointment_date": reschedule_data.new_date,
+            "appointment_time": reschedule_data.new_time,
+            "status": "pending"
+        }}
+    )
+    # Notify doctor
+    doctor_profile = await db.doctor_profiles.find_one({"id": appointment["doctor_id"]}, {"_id": 0})
+    if doctor_profile:
+        doctor_user = await db.users.find_one({"id": doctor_profile["user_id"]}, {"_id": 0})
+        if doctor_user:
+            patient = await db.users.find_one({"id": appointment["patient_id"]}, {"_id": 0})
+            send_email(
+                to=doctor_user["email"],
+                subject="Appointment Rescheduled — Alambana Healthcare",
+                html_body=f"""<div style="font-family:Inter,sans-serif;max-width:500px;margin:auto;padding:32px">
+                  <h2 style="color:#0D9488">Appointment Rescheduled</h2>
+                  <p>Hi Dr. {doctor_user.get('name','')}, an appointment has been rescheduled.</p>
+                  <p><strong>Patient:</strong> {patient.get('name','') if patient else ''}</p>
+                  <p><strong>New Date:</strong> {reschedule_data.new_date} at {reschedule_data.new_time}</p>
+                </div>"""
+            )
+    return {"message": "Appointment rescheduled successfully"}
 
 # Include the router in the main app
 app.include_router(api_router)

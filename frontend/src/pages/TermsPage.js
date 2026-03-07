@@ -94,7 +94,7 @@ const TermsPage = () => {
             <h2 className="text-2xl font-semibold mt-8 mb-4">9. Governing Law</h2>
             <p>
               These terms are governed by the laws of India. Any disputes will be subject to the exclusive 
-              jurisdiction of courts in [Your City], India.
+              jurisdiction of courts in Bengaluru, India.
             </p>
           </section>
 

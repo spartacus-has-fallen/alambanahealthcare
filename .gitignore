@@ -52,6 +52,9 @@ __pycache__/
 venv/
 .venv/
 
+# Local context / documentation
+PROJECT_CONTEXT.md
+
 # Development tools
 chainlit.md
 .chainlit

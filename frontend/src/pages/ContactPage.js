@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { toast } from 'sonner';
+import api from '@/utils/api';
 
 const ContactPage = () => {
   const [formData, setFormData] = useState({
@@ -21,13 +22,15 @@ const ContactPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    
-    // Simulate form submission (you can integrate with backend API later)
-    setTimeout(() => {
-      toast.success('Message sent successfully! We will get back to you soon.');
+    try {
+      await api.post('/contact', formData);
+      toast.success('Message sent! We\'ll get back to you within 24 hours.');
       setFormData({ name: '', email: '', subject: '', message: '' });
+    } catch (err) {
+      toast.error('Failed to send message. Please try WhatsApp or email directly.');
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
   };
 
   return (

@@ -1,12 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { BookOpen, Calendar, User } from 'lucide-react';
+import { BookOpen, Calendar, User, ArrowRight } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { useNavigate } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import api from '@/utils/api';
 import { toast } from 'sonner';
 
 const BlogPage = () => {
+  const navigate = useNavigate();
   const [blogs, setBlogs] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -89,6 +92,15 @@ const BlogPage = () => {
                       ))}
                     </div>
                   )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-4 w-full gap-1 text-primary hover:text-primary/80"
+                    onClick={() => navigate(`/blogs/${blog.id}`)}
+                    data-testid={`read-more-${idx}`}
+                  >
+                    Read More <ArrowRight className="h-3 w-3" />
+                  </Button>
                 </CardContent>
               </Card>
             ))}

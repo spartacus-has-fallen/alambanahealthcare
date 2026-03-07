@@ -38,8 +38,12 @@ import AISymptomChecker from '@/pages/AISymptomChecker';
 import HealthRecords from '@/pages/HealthRecords';
 import ReferralPage from '@/pages/ReferralPage';
 import BlogPage from '@/pages/BlogPage';
+import BlogDetailPage from '@/pages/BlogDetailPage';
 import IntegrationControlPanel from '@/pages/IntegrationControlPanel';
 import ContactPage from '@/pages/ContactPage';
+import ForgotPasswordPage from '@/pages/ForgotPasswordPage';
+import ResetPasswordPage from '@/pages/ResetPasswordPage';
+import NotFoundPage from '@/pages/NotFoundPage';
 
 // Components
 import WhatsAppButton from '@/components/WhatsAppButton';
@@ -58,12 +62,13 @@ function App() {
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/disclaimer" element={<DisclaimerPage />} />
-          <Route path="/contact" element={<ContactPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/blogs" element={<BlogPage />} />
-          <Route path="/contact" element={<ContactPage />} />
+          <Route path="/blogs/:blogId" element={<BlogDetailPage />} />
           <Route path="/ai-checker" element={<AISymptomChecker />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
           
           {/* Protected Routes */}
           <Route path="/patient/dashboard" element={<ProtectedRoute><PatientDashboard /></ProtectedRoute>} />
@@ -73,6 +78,7 @@ function App() {
           <Route path="/health-records" element={<ProtectedRoute><HealthRecords /></ProtectedRoute>} />
           <Route path="/referral" element={<ProtectedRoute><ReferralPage /></ProtectedRoute>} />
           <Route path="/admin/integrations" element={<ProtectedRoute><IntegrationControlPanel /></ProtectedRoute>} />
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
         
         <WhatsAppButton />
