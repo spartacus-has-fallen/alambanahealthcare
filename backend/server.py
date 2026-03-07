@@ -1706,6 +1706,10 @@ async def reschedule_appointment(appointment_id: str, reschedule_data: Appointme
             )
     return {"message": "Appointment rescheduled successfully"}
 
+@api_router.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
 # Include the router in the main app
 app.include_router(api_router)
 
