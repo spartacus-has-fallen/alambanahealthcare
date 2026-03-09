@@ -44,7 +44,8 @@ async def init():
         "users", "doctor_profiles", "appointments", "health_records",
         "ai_assessments", "blogs", "payments", "chat_messages",
         "prescriptions", "ratings", "feature_flags",
-        "password_reset_tokens", "contact_messages"
+        "password_reset_tokens", "contact_messages",
+        "advertisements", "platform_config",
     ]
     existing = await db.list_collection_names()
     for col in collections:

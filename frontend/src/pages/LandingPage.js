@@ -183,6 +183,10 @@ const LandingPage = () => {
         </div>
       </section>
 
+      <div className="container mx-auto px-4 pb-6 max-w-7xl">
+        <AdBanner position="bottom" />
+      </div>
+
       <Footer />
     </div>
   );

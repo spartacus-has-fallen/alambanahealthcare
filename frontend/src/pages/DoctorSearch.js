@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Label } from '@/components/ui/label';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
+import AdBanner from '@/components/AdBanner';
 import DoctorRatings from '@/components/DoctorRatings';
 import api from '@/utils/api';
 import { toast } from 'sonner';
@@ -141,6 +142,8 @@ const DoctorSearch = () => {
           <p className="text-slate-600">Search and book consultations with verified healthcare professionals</p>
         </div>
 
+        <div className="flex gap-6">
+        <div className="flex-1 min-w-0">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
           <div className="relative">
             <Search className="absolute left-3 top-3 h-5 w-5 text-slate-400" />
@@ -207,6 +210,13 @@ const DoctorSearch = () => {
             ))}
           </div>
         )}
+        </div>{/* end main col */}
+
+        {/* Sidebar Ad */}
+        <div className="hidden lg:block w-56 flex-shrink-0 pt-1">
+          <AdBanner position="sidebar" />
+        </div>
+        </div>{/* end flex row */}
       </div>
 
       {/* Booking Dialog */}
