@@ -2087,6 +2087,130 @@ async def export_health_records_pdf(payload: dict = Depends(verify_token)):
     filename = f"health_report_{user.get('name','patient').replace(' ','_')}_{datetime.now(timezone.utc).strftime('%Y%m%d')}.pdf"
     return {"pdf_base64": pdf_b64, "filename": filename}
 
+@api_router.post("/admin/seed")
+async def seed_demo_data(payload: dict = Depends(verify_token)):
+    """One-time seed endpoint. Admin only. Idempotent — skips existing records."""
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+
+    created = []
+
+    def hp(pw: str) -> str:
+        import bcrypt
+        return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
+
+    now_ts = datetime.now(timezone.utc).isoformat()
+
+    DOCTORS = [
+        {"email": "dr.arjun.sharma@alambana.in",  "name": "Dr. Arjun Sharma",  "phone": "9876543210",
+         "specialization": "Cardiology",   "qualification": "MBBS, MD (Cardiology), FACC",   "experience_years": 14,
+         "license_number": "MCI-2010-CARD-4521", "consultation_fee": 800.0,
+         "available_days": ["Monday","Wednesday","Friday"],
+         "available_time_slots": ["10:00","11:00","12:00","14:00","15:00","16:00"],
+         "rating": 4.8, "total_consultations": 1240,
+         "bio": "Senior Interventional Cardiologist with 14 years of experience in coronary artery disease and heart failure management."},
+        {"email": "dr.priya.menon@alambana.in",   "name": "Dr. Priya Menon",   "phone": "9876543211",
+         "specialization": "Dermatology",  "qualification": "MBBS, DVD, FRCP (Dermatology)",   "experience_years": 9,
+         "license_number": "MCI-2015-DERM-8832", "consultation_fee": 600.0,
+         "available_days": ["Tuesday","Thursday","Saturday"],
+         "available_time_slots": ["09:00","10:00","11:00","14:00","15:00"],
+         "rating": 4.7, "total_consultations": 890,
+         "bio": "Consultant Dermatologist & Cosmetologist specialising in skin diseases, acne, hair-loss, and cosmetic procedures. Trained at AIIMS Delhi."},
+        {"email": "dr.rajesh.kumar@alambana.in",  "name": "Dr. Rajesh Kumar",  "phone": "9876543212",
+         "specialization": "Ayurveda",     "qualification": "BAMS, MD (Ayurveda), PhD",         "experience_years": 18,
+         "license_number": "CCIM-2005-AYU-1123", "consultation_fee": 400.0,
+         "available_days": ["Monday","Tuesday","Wednesday","Thursday","Friday"],
+         "available_time_slots": ["08:00","09:00","10:00","11:00","14:00","15:00","16:00"],
+         "rating": 4.9, "total_consultations": 2150,
+         "bio": "Renowned Ayurvedic physician with 18 years in Panchakarma therapy, chronic disease management, and holistic wellness."},
+        {"email": "dr.anika.singh@alambana.in",   "name": "Dr. Anika Singh",   "phone": "9876543213",
+         "specialization": "Mental Health","qualification": "MBBS, MD (Psychiatry), MRCPsych", "experience_years": 11,
+         "license_number": "MCI-2013-PSY-6674",  "consultation_fee": 700.0,
+         "available_days": ["Monday","Wednesday","Thursday","Saturday"],
+         "available_time_slots": ["10:00","11:00","12:00","15:00","16:00","17:00"],
+         "rating": 4.6, "total_consultations": 780,
+         "bio": "Consultant Psychiatrist specialising in anxiety, depression, OCD, and relationship counselling. Evidence-based approach."},
+        {"email": "dr.meera.nair@alambana.in",    "name": "Dr. Meera Nair",    "phone": "9876543214",
+         "specialization": "Nutrition",    "qualification": "MBBS, MSc (Clinical Nutrition), RD","experience_years": 7,
+         "license_number": "IDA-2018-NUT-3345",  "consultation_fee": 350.0,
+         "available_days": ["Tuesday","Friday","Saturday"],
+         "available_time_slots": ["09:00","10:00","11:00","12:00","14:00"],
+         "rating": 4.5, "total_consultations": 560,
+         "bio": "Clinical Nutritionist helping patients manage diabetes, obesity, PCOD, and hypertension through personalised diet plans."},
+    ]
+
+    for d in DOCTORS:
+        if await db.users.find_one({"email": d["email"]}):
+            continue
+        uid = str(uuid.uuid4())
+        u = {"id": uid, "email": d["email"], "name": d["name"], "phone": d["phone"],
+             "role": "doctor", "password_hash": hp("Doctor@1234"), "is_active": True,
+             "referral_code": str(uuid.uuid4())[:8].upper(), "referral_points": 0,
+             "referred_by": None, "created_at": now_ts}
+        await db.users.insert_one(u); u.pop("_id", None)
+        prof = {"id": str(uuid.uuid4()), "user_id": uid, "is_approved": True, "approved_at": now_ts,
+                "created_at": now_ts, "license_file_url": None,
+                **{k: d[k] for k in ["specialization","qualification","experience_years","license_number",
+                                      "consultation_fee","available_days","available_time_slots","rating","total_consultations","bio"]}}
+        await db.doctor_profiles.insert_one(prof); prof.pop("_id", None)
+        created.append(f"doctor:{d['name']}")
+
+    PATIENTS = [
+        {"email": "rahul.verma@gmail.com",  "name": "Rahul Verma",  "phone": "9123456780"},
+        {"email": "sneha.patel@gmail.com",  "name": "Sneha Patel",  "phone": "9123456781"},
+        {"email": "vikram.das@gmail.com",   "name": "Vikram Das",   "phone": "9123456782"},
+    ]
+    for p in PATIENTS:
+        if await db.users.find_one({"email": p["email"]}):
+            continue
+        uid = str(uuid.uuid4())
+        u = {"id": uid, "role": "patient", "password_hash": hp("Patient@1234"), "is_active": True,
+             "referral_code": str(uuid.uuid4())[:8].upper(), "referral_points": 0,
+             "referred_by": None, "created_at": now_ts, **p}
+        await db.users.insert_one(u); u.pop("_id", None)
+        created.append(f"patient:{p['name']}")
+
+    BLOGS = [
+        {"title": "10 Warning Signs of Heart Disease You Should Never Ignore",
+         "category": "Cardiology", "tags": ["heart disease","prevention","warning signs"], "is_featured": True,
+         "content": "Heart disease is the leading cause of death in India. Early detection saves lives.\n\n**1. Chest Pain** — squeezing or pressing sensation, may radiate to arm or jaw.\n**2. Shortness of Breath** — breathlessness during light activity.\n**3. Palpitations** — racing or fluttering heartbeat.\n**4. Swollen Ankles** — oedema can indicate heart failure.\n**5. Persistent Fatigue** — especially in women.\n**6. Dizziness** — inadequate blood flow to the brain.\n**7. Cold Sweats** — without exertion alongside chest pain.\n**8. Nausea** — can accompany a heart attack, especially in women.\n**9. Upper Body Pain** — shoulders, arms, neck, jaw.\n**10. Snoring/Sleep Apnoea** — significantly increases cardiovascular risk.\n\n**Prevention**: heart-healthy diet, 150 min/week exercise, quit smoking, manage stress, monitor BP and cholesterol. Consult a cardiologist at Alambana Healthcare today."},
+        {"title": "Ayurvedic Approach to Chronic Digestive Disorders",
+         "category": "Ayurveda", "tags": ["ayurveda","digestion","gut health","IBS"], "is_featured": False,
+         "content": "Digestive disorders affect nearly 40% of Indians. Ayurveda treats the root cause.\n\n**Agni (Digestive Fire)** — when impaired, Ama (toxins) accumulate.\n\n**Acidity**: Amla powder in warm water 30 min before meals; Yashtimadhu soothes the oesophageal lining.\n\n**IBS**: Triphala churna (2 tsp in warm water at bedtime); Takrarishta restores healthy gut flora.\n\n**Constipation**: Isabgol (psyllium husk) adds bulk; Haritaki improves nutrient absorption.\n\n**Bloating**: Hingvastak Churna with asafoetida and pepper; Ajwain seeds after meals.\n\n**Panchakarma Therapies**: Virechana (purgation) for Pitta disorders; Basti (herbal enemas) for Vata issues.\n\n**Lifestyle**: eat only when hungry, walk 100 steps after each meal, sleep on the left side. Consult Dr. Rajesh Kumar at Alambana Healthcare."},
+        {"title": "Managing Type 2 Diabetes: Diet, Lifestyle & Monitoring",
+         "category": "Nutrition", "tags": ["diabetes","blood sugar","diet","lifestyle"], "is_featured": True,
+         "content": "India has 77 million diabetics — the second highest globally. Type 2 diabetes is largely manageable through lifestyle.\n\n**Glycaemic Index**: Low GI foods (oats, lentils, vegetables) should dominate your plate. Avoid white rice, maida, and sugary drinks.\n\n**Plate Method**: 50% non-starchy vegetables, 25% lean protein, 25% complex carbs.\n\n**Beneficial Indian Foods**: Karela (mimics insulin), Methi (reduces glucose spikes), Jamun seeds (powder in water), Turmeric (activates glucose metabolism).\n\n**Exercise**: 30 min brisk walking 5x/week reduces HbA1c by 0.7%. Add resistance training 2–3x/week.\n\n**Targets**: Fasting glucose 80–130 mg/dL, postmeal <180 mg/dL, HbA1c <7%.\n\n**Complications**: annual eye exams, 6-monthly kidney function tests, daily foot inspection. Book with Dr. Meera Nair at Alambana Healthcare."},
+        {"title": "Mental Health in India: Breaking the Stigma",
+         "category": "Mental Health", "tags": ["mental health","depression","anxiety","stigma"], "is_featured": False,
+         "content": "India carries 15% of the global mental health burden yet allocates <1% of its health budget to it.\n\n**Key Facts**: 150 million Indians need care; only 30 million seek it. Average delay from symptoms to treatment: 7 years.\n\n**Depression** — persistent low mood 2+ weeks, loss of interest, fatigue. Not weakness — a medical condition.\n\n**Anxiety** — GAD, social anxiety, panic disorder, OCD. Effective treatments exist.\n\n**Bipolar Disorder** — mania alternating with depression. Often misdiagnosed. Responds well to mood stabilisers.\n\n**Myths vs Reality**: Psychiatric medicines are mostly NOT addictive. Therapy is for anyone seeking better wellbeing. 1 in 4 people face a mental health issue in their lifetime.\n\n**Helplines**: iCall 9152987821, Vandrevala Foundation 1860-2662-345 (24/7).\n\nDr. Anika Singh at Alambana Healthcare provides compassionate, confidential care. Reach out today."},
+    ]
+
+    if await db.blogs.count_documents({}) == 0:
+        admin_doc = await db.users.find_one({"email": "admin@alambana.in"}, {"_id": 0})
+        author_id = admin_doc["id"] if admin_doc else user["id"]
+        from datetime import timedelta
+        for i, b in enumerate(BLOGS):
+            ts = (datetime.now(timezone.utc) - timedelta(days=(len(BLOGS)-i)*3)).isoformat()
+            doc = {"id": str(uuid.uuid4()), "author_id": author_id, "is_published": True,
+                   "featured_image_base64": None, "created_at": ts, "updated_at": ts, **b}
+            await db.blogs.insert_one(doc); doc.pop("_id", None)
+        created.append(f"blogs:{len(BLOGS)}")
+
+    if not await db.platform_config.find_one({}):
+        await db.platform_config.insert_one(
+            {"commission_percentage": 15.0, "referral_points_per_signup": 10, "updated_at": now_ts}
+        )
+        created.append("platform_config")
+
+    skipped = "All records already exist." if not created else ""
+    return {"message": "Seed complete", "created": created, "note": skipped,
+            "credentials": {
+                "doctors": "Doctor@1234 (all 5 doctors)",
+                "patients": "Patient@1234 (rahul.verma@gmail.com, sneha.patel@gmail.com, vikram.das@gmail.com)"
+            }}
+
+
 @api_router.get("/health")
 async def health_check():
     return {"status": "ok"}

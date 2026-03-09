@@ -176,13 +176,26 @@ const AdminDashboard = () => {
         <div className="mb-8">
           <h1 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Manrope, sans-serif' }}>Admin Dashboard</h1>
           <p className="text-slate-600">Platform overview and management</p>
-          <div className="mt-4">
+          <div className="mt-4 flex flex-wrap gap-3">
             <Link to="/admin/integrations">
               <Button variant="outline" className="gap-2 rounded-full" data-testid="integrations-link">
                 <Settings className="h-4 w-4" />
                 Integration Control Panel
               </Button>
             </Link>
+            <Button variant="outline" className="gap-2 rounded-full border-amber-400 text-amber-700 hover:bg-amber-50"
+              data-testid="seed-btn"
+              onClick={async () => {
+                try {
+                  const r = await api.post('/admin/seed');
+                  toast.success(`Seed done! Created: ${r.data.created.join(', ') || 'nothing new (already seeded)'}`);
+                  fetchAdminData();
+                } catch (err) {
+                  toast.error(err?.response?.data?.detail || 'Seed failed');
+                }
+              }}>
+              Seed Demo Data
+            </Button>
           </div>
         </div>
 
