@@ -416,7 +416,6 @@ const PatientDashboard = () => {
             </CardContent>
           </Card>
         )}
-      </div>
 
         {/* Complaints Section */}
         <Card className="mt-8 rounded-2xl">
