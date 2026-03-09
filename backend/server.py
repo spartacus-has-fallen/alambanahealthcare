@@ -2087,6 +2087,44 @@ async def export_health_records_pdf(payload: dict = Depends(verify_token)):
     filename = f"health_report_{user.get('name','patient').replace(' ','_')}_{datetime.now(timezone.utc).strftime('%Y%m%d')}.pdf"
     return {"pdf_base64": pdf_b64, "filename": filename}
 
+@api_router.get("/admin/users")
+async def list_all_users(payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    users = await db.users.find(
+        {"role": "patient"},
+        {"_id": 0, "password_hash": 0}
+    ).sort("created_at", -1).to_list(500)
+    return users
+
+@api_router.get("/admin/doctors/all")
+async def list_all_doctors(payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    profiles = await db.doctor_profiles.find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    for prof in profiles:
+        u = await db.users.find_one({"id": prof["user_id"]}, {"_id": 0, "password_hash": 0})
+        prof["user"] = u or {}
+    return profiles
+
+@api_router.get("/admin/contacts")
+async def list_contact_messages(payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    messages = await db.contact_messages.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return messages
+
+@api_router.delete("/admin/contacts/{msg_id}")
+async def delete_contact_message(msg_id: str, payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    await db.contact_messages.delete_one({"id": msg_id})
+    return {"message": "Deleted"}
+
 @api_router.post("/admin/seed")
 async def seed_demo_data(payload: dict = Depends(verify_token)):
     """One-time seed endpoint. Admin only. Idempotent — skips existing records."""

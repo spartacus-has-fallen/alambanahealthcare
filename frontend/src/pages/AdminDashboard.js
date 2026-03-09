@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Users, Stethoscope, Calendar, DollarSign, CheckCircle, X, Settings, TrendingUp, Bot, Megaphone, Gift, Trash2, ToggleLeft, ToggleRight, Upload } from 'lucide-react';
+import { Users, Stethoscope, Calendar, DollarSign, CheckCircle, X, Settings, TrendingUp, Bot, Megaphone, Gift, Trash2, ToggleLeft, ToggleRight, Upload, Mail, Phone, Star, Clock } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,6 +26,11 @@ const AdminDashboard = () => {
   const [ads, setAds] = useState([]);
   const [referralStats, setReferralStats] = useState(null);
   const [adForm, setAdForm] = useState({ title: '', link_url: '', position: 'top', image_base64: '', start_date: '', end_date: '' });
+  const [allUsers, setAllUsers] = useState([]);
+  const [allDoctors, setAllDoctors] = useState([]);
+  const [contacts, setContacts] = useState([]);
+  const [expandedContact, setExpandedContact] = useState(null);
+  const [expandedDoctor, setExpandedDoctor] = useState(null);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -35,6 +40,9 @@ const AdminDashboard = () => {
     fetchAiMonitor();
     fetchAds();
     fetchReferralStats();
+    fetchAllUsers();
+    fetchAllDoctors();
+    fetchContacts();
   }, []);
 
   const fetchAdminData = async () => {
@@ -85,6 +93,38 @@ const AdminDashboard = () => {
       const res = await api.get('/admin/referral/stats');
       setReferralStats(res.data);
     } catch {}
+  };
+
+  const fetchAllUsers = async () => {
+    try {
+      const res = await api.get('/admin/users');
+      setAllUsers(res.data);
+    } catch {}
+  };
+
+  const fetchAllDoctors = async () => {
+    try {
+      const res = await api.get('/admin/doctors/all');
+      setAllDoctors(res.data);
+    } catch {}
+  };
+
+  const fetchContacts = async () => {
+    try {
+      const res = await api.get('/admin/contacts');
+      setContacts(res.data);
+    } catch {}
+  };
+
+  const deleteContact = async (id) => {
+    try {
+      await api.delete(`/admin/contacts/${id}`);
+      toast.success('Message deleted');
+      setContacts(c => c.filter(m => m.id !== id));
+      if (expandedContact === id) setExpandedContact(null);
+    } catch {
+      toast.error('Failed to delete');
+    }
   };
 
   const handleDoctorApproval = async (doctorId, approved) => {
@@ -264,6 +304,15 @@ const AdminDashboard = () => {
             </TabsTrigger>
             <TabsTrigger value="referral" data-testid="referral-tab">
               <Gift className="h-3 w-3 mr-1" /> Referral
+            </TabsTrigger>
+            <TabsTrigger value="users" data-testid="users-tab">
+              <Users className="h-3 w-3 mr-1" /> Users ({allUsers.length})
+            </TabsTrigger>
+            <TabsTrigger value="doctors-list" data-testid="doctors-list-tab">
+              <Stethoscope className="h-3 w-3 mr-1" /> All Doctors ({allDoctors.length})
+            </TabsTrigger>
+            <TabsTrigger value="contacts" data-testid="contacts-tab">
+              <Mail className="h-3 w-3 mr-1" /> Contact Forms ({contacts.length})
             </TabsTrigger>
           </TabsList>
 
@@ -661,6 +710,202 @@ const AdminDashboard = () => {
               </Card>
             )}
           </TabsContent>
+          {/* --- USERS --- */}
+          <TabsContent value="users" className="mt-6">
+            <Card className="rounded-2xl">
+              <CardHeader>
+                <CardTitle>All Patients ({allUsers.length})</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {allUsers.length === 0 ? (
+                  <p className="text-center text-slate-500 py-8">No patients registered yet</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-slate-50">
+                          <th className="text-left py-3 px-3">Name</th>
+                          <th className="text-left py-3 px-3">Email</th>
+                          <th className="text-left py-3 px-3">Phone</th>
+                          <th className="text-left py-3 px-3">Referral Code</th>
+                          <th className="text-right py-3 px-3">Points</th>
+                          <th className="text-center py-3 px-3">Status</th>
+                          <th className="text-left py-3 px-3">Joined</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allUsers.map((u, i) => (
+                          <tr key={u.id} className="border-b hover:bg-slate-50" data-testid={`user-row-${i}`}>
+                            <td className="py-3 px-3 font-medium">{u.name}</td>
+                            <td className="py-3 px-3 text-slate-600">
+                              <a href={`mailto:${u.email}`} className="hover:text-primary flex items-center gap-1">
+                                <Mail className="h-3 w-3" />{u.email}
+                              </a>
+                            </td>
+                            <td className="py-3 px-3 text-slate-600">
+                              <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{u.phone}</span>
+                            </td>
+                            <td className="py-3 px-3 font-mono text-xs bg-slate-50 rounded">{u.referral_code}</td>
+                            <td className="py-3 px-3 text-right font-semibold text-amber-600">{u.referral_points}</td>
+                            <td className="py-3 px-3 text-center">
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${u.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>
+                                {u.is_active ? 'Active' : 'Inactive'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3 text-slate-500 text-xs">
+                              {u.created_at ? new Date(u.created_at).toLocaleDateString('en-IN') : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* --- ALL DOCTORS --- */}
+          <TabsContent value="doctors-list" className="mt-6">
+            <Card className="rounded-2xl">
+              <CardHeader>
+                <CardTitle>All Doctors ({allDoctors.length})</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {allDoctors.length === 0 ? (
+                  <p className="text-center text-slate-500 py-8">No doctors registered yet</p>
+                ) : (
+                  <div className="space-y-4">
+                    {allDoctors.map((d, i) => (
+                      <div key={d.id} className="border rounded-xl overflow-hidden" data-testid={`doctor-detail-${i}`}>
+                        <button
+                          className="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100 text-left"
+                          onClick={() => setExpandedDoctor(expandedDoctor === d.id ? null : d.id)}
+                        >
+                          <div className="flex items-center gap-4">
+                            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                              <Stethoscope className="h-5 w-5 text-primary" />
+                            </div>
+                            <div>
+                              <p className="font-semibold">{d.user?.name || 'Unknown'}</p>
+                              <p className="text-sm text-slate-500">{d.specialization} · {d.qualification}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4 text-sm">
+                            <span className="flex items-center gap-1 text-amber-600">
+                              <Star className="h-3 w-3 fill-amber-400" />{d.rating?.toFixed(1)}
+                            </span>
+                            <span className="text-slate-500">{d.total_consultations} consultations</span>
+                            <span className="font-semibold text-primary">₹{d.consultation_fee}</span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${d.is_approved ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                              {d.is_approved ? 'Approved' : 'Pending'}
+                            </span>
+                          </div>
+                        </button>
+
+                        {expandedDoctor === d.id && (
+                          <div className="p-4 border-t grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2 text-sm">
+                              <p><span className="text-slate-500 w-32 inline-block">Email:</span>
+                                <a href={`mailto:${d.user?.email}`} className="text-primary hover:underline">{d.user?.email}</a>
+                              </p>
+                              <p><span className="text-slate-500 w-32 inline-block">Phone:</span>{d.user?.phone}</p>
+                              <p><span className="text-slate-500 w-32 inline-block">License:</span>{d.license_number}</p>
+                              <p><span className="text-slate-500 w-32 inline-block">Experience:</span>{d.experience_years} years</p>
+                              <p><span className="text-slate-500 w-32 inline-block">Fee:</span>₹{d.consultation_fee}</p>
+                              <p><span className="text-slate-500 w-32 inline-block">Joined:</span>
+                                {d.created_at ? new Date(d.created_at).toLocaleDateString('en-IN') : '—'}
+                              </p>
+                            </div>
+                            <div className="space-y-2 text-sm">
+                              <p className="text-slate-500 font-medium">Available Days:</p>
+                              <div className="flex flex-wrap gap-1">
+                                {(d.available_days || []).map(day => (
+                                  <span key={day} className="text-xs bg-teal-100 text-teal-700 px-2 py-0.5 rounded-full">{day.slice(0,3)}</span>
+                                ))}
+                              </div>
+                              <p className="text-slate-500 font-medium mt-2">Time Slots:</p>
+                              <div className="flex flex-wrap gap-1">
+                                {(d.available_time_slots || []).map(t => (
+                                  <span key={t} className="text-xs bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full flex items-center gap-0.5">
+                                    <Clock className="h-2.5 w-2.5" />{t}
+                                  </span>
+                                ))}
+                              </div>
+                              {d.bio && <p className="text-slate-600 mt-3 text-xs leading-relaxed">{d.bio}</p>}
+                            </div>
+                            {!d.is_approved && (
+                              <div className="md:col-span-2 flex gap-2 pt-2">
+                                <Button size="sm" onClick={() => { handleDoctorApproval(d.id, true); setExpandedDoctor(null); fetchAllDoctors(); }} className="rounded-full bg-emerald-600 hover:bg-emerald-700 gap-1">
+                                  <CheckCircle className="h-3 w-3" /> Approve
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={() => { handleDoctorApproval(d.id, false); setExpandedDoctor(null); fetchAllDoctors(); }} className="rounded-full text-red-600 gap-1">
+                                  <X className="h-3 w-3" /> Reject
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* --- CONTACT FORMS --- */}
+          <TabsContent value="contacts" className="mt-6">
+            <Card className="rounded-2xl">
+              <CardHeader>
+                <CardTitle>Contact Form Submissions ({contacts.length})</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {contacts.length === 0 ? (
+                  <p className="text-center text-slate-500 py-8">No contact messages yet</p>
+                ) : (
+                  <div className="space-y-3">
+                    {contacts.map((msg, i) => (
+                      <div key={msg.id} className="border rounded-xl overflow-hidden" data-testid={`contact-msg-${i}`}>
+                        <button
+                          className="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100 text-left"
+                          onClick={() => setExpandedContact(expandedContact === msg.id ? null : msg.id)}
+                        >
+                          <div>
+                            <p className="font-semibold">{msg.name}
+                              <span className="ml-2 text-sm font-normal text-slate-500">— {msg.subject}</span>
+                            </p>
+                            <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-2">
+                              <Mail className="h-3 w-3" />{msg.email}
+                              <span className="ml-2">{msg.created_at ? new Date(msg.created_at).toLocaleString('en-IN') : ''}</span>
+                            </p>
+                          </div>
+                          <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-600 hover:bg-red-50 rounded-full"
+                            onClick={e => { e.stopPropagation(); deleteContact(msg.id); }}
+                            data-testid={`delete-contact-${i}`}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </button>
+                        {expandedContact === msg.id && (
+                          <div className="p-4 border-t bg-white">
+                            <div className="flex gap-4 text-sm mb-3">
+                              <p><span className="text-slate-500">From:</span> <a href={`mailto:${msg.email}`} className="text-primary hover:underline">{msg.name} &lt;{msg.email}&gt;</a></p>
+                            </div>
+                            <p className="text-slate-800 whitespace-pre-wrap leading-relaxed text-sm">{msg.message}</p>
+                            <a href={`mailto:${msg.email}?subject=Re: ${msg.subject}`}
+                              className="mt-3 inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                              <Mail className="h-3 w-3" /> Reply via email
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
         </Tabs>
       </div>
 
