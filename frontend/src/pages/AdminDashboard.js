@@ -114,6 +114,11 @@ const AdminDashboard = () => {
   const handleAdImageUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    if (file.size > 800 * 1024) {
+      toast.error('Image must be under 800KB. Please compress it first.');
+      e.target.value = '';
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (ev) => setAdForm(f => ({ ...f, image_base64: ev.target.result }));
     reader.readAsDataURL(file);
@@ -130,18 +135,24 @@ const AdminDashboard = () => {
       setAdForm({ title: '', link_url: '', position: 'top', image_base64: '', start_date: '', end_date: '' });
       if (fileInputRef.current) fileInputRef.current.value = '';
       fetchAds();
-    } catch {
-      toast.error('Failed to create advertisement');
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      toast.error(detail ? `Failed: ${detail}` : 'Failed to create advertisement');
     }
   };
 
   const toggleAd = async (ad) => {
     try {
-      await api.put(`/admin/advertisements/${ad.id}`, { ...ad, is_active: !ad.is_active });
+      await api.put(`/admin/advertisements/${ad.id}`, {
+        title: ad.title, image_base64: ad.image_base64, link_url: ad.link_url,
+        position: ad.position, is_active: !ad.is_active,
+        start_date: ad.start_date || null, end_date: ad.end_date || null
+      });
       toast.success(ad.is_active ? 'Ad deactivated' : 'Ad activated');
       fetchAds();
-    } catch {
-      toast.error('Failed to update ad');
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      toast.error(detail || 'Failed to update ad');
     }
   };
 
