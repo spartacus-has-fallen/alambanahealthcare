@@ -162,6 +162,11 @@ const DoctorDashboard = () => {
   const handleBlogImageUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    if (file.size > 800 * 1024) {
+      toast.error('Image must be under 800KB. Please compress it first.');
+      e.target.value = '';
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (ev) => setBlogForm(f => ({ ...f, featured_image_base64: ev.target.result }));
     reader.readAsDataURL(file);

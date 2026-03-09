@@ -62,9 +62,17 @@ const BlogPage = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {blogs.map((blog, idx) => (
               <Card key={blog.id} className="card-hover overflow-hidden" data-testid={`blog-card-${idx}`}>
-                <div className="h-48 bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center">
-                  <BookOpen className="h-16 w-16 text-primary/40" />
-                </div>
+                {blog.featured_image_base64 ? (
+                  <img
+                    src={blog.featured_image_base64}
+                    alt={blog.title}
+                    className="w-full h-48 object-cover"
+                  />
+                ) : (
+                  <div className="h-48 bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center">
+                    <BookOpen className="h-16 w-16 text-primary/40" />
+                  </div>
+                )}
                 <CardContent className="p-6">
                   <div className="flex items-center gap-2 mb-3">
                     <span className="px-3 py-1 bg-primary/10 text-primary text-xs font-semibold rounded-full">

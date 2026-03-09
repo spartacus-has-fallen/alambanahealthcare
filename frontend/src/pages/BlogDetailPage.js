@@ -57,7 +57,7 @@ const BlogDetailPage = () => {
         <article>
           {blog.featured_image_base64 && (
             <img
-              src={`data:image/jpeg;base64,${blog.featured_image_base64}`}
+              src={blog.featured_image_base64}
               alt={blog.title}
               className="w-full rounded-2xl mb-8 max-h-[400px] object-cover"
             />
