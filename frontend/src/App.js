@@ -66,6 +66,7 @@ function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/blogs" element={<BlogPage />} />
           <Route path="/blogs/:blogId" element={<BlogDetailPage />} />
+          <Route path="/contact" element={<ContactPage />} />
           <Route path="/ai-checker" element={<AISymptomChecker />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />

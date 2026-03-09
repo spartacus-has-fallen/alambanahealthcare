@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
+import AdBanner from '@/components/AdBanner';
 
 const LandingPage = () => {
   const specialties = [
@@ -59,6 +60,9 @@ const LandingPage = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-teal-50 via-white to-sky-50">
       <Navbar />
+      <div className="container mx-auto px-4 pt-4 max-w-7xl">
+        <AdBanner position="top" />
+      </div>
 
       {/* Hero Section */}
       <section className="py-20 px-4" data-testid="hero-section">

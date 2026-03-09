@@ -221,11 +221,14 @@ class Payment(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     user_id: str
     appointment_id: str
+    doctor_id: Optional[str] = None
     amount: float
     currency: str = "INR"
     razorpay_order_id: Optional[str] = None
     razorpay_payment_id: Optional[str] = None
     status: str = "pending"
+    doctor_earnings: Optional[float] = None
+    platform_earnings: Optional[float] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class PaymentCreate(BaseModel):
@@ -314,6 +317,36 @@ class AppointmentReschedule(BaseModel):
     new_date: str
     new_time: str
 
+class PlatformConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    commission_percentage: float = 15.0
+    referral_points_per_signup: int = 10
+    updated_at: Optional[str] = None
+
+class Advertisement(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    title: str
+    image_base64: str
+    link_url: str
+    position: str  # "top" | "sidebar" | "bottom"
+    is_active: bool = True
+    impressions: int = 0
+    clicks: int = 0
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    created_at: Optional[str] = None
+
+class AdvertisementCreate(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    title: str
+    image_base64: str
+    link_url: str
+    position: str
+    is_active: bool = True
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+
 
 # ========== HELPER FUNCTIONS ==========
 
@@ -394,10 +427,12 @@ async def register(user_data: UserRegister, referred_by: Optional[str] = None):
         referrer = await db.users.find_one({"referral_code": referred_by}, {"_id": 0})
         if referrer:
             user_dict["referred_by"] = referred_by
-            # Update referrer points
+            # Get configurable referral points value
+            config = await db.platform_config.find_one({}, {"_id": 0}) or {}
+            referral_pts = config.get("referral_points_per_signup", 10)
             await db.users.update_one(
                 {"referral_code": referred_by},
-                {"$inc": {"referral_points": 10}}
+                {"$inc": {"referral_points": referral_pts}}
             )
     
     await db.users.insert_one(user_dict)
@@ -839,6 +874,7 @@ async def create_payment_order(payment_data: PaymentCreate, payload: dict = Depe
     payment = Payment(
         user_id=payload["id"],
         appointment_id=payment_data.appointment_id,
+        doctor_id=appointment.get("doctor_id"),
         amount=payment_data.amount,
         razorpay_order_id=order["id"]
     )
@@ -867,20 +903,30 @@ async def verify_payment(razorpay_payment_id: str, razorpay_order_id: str, razor
             "razorpay_signature": razorpay_signature
         })
         
+        # Compute commission
+        config = await db.platform_config.find_one({}, {"_id": 0}) or {}
+        commission_pct = config.get("commission_percentage", 15.0)
+
         # Update payment status
-        await db.payments.update_one(
-            {"razorpay_order_id": razorpay_order_id},
-            {"$set": {"razorpay_payment_id": razorpay_payment_id, "status": "completed"}}
-        )
-        
-        # Update appointment payment status
         payment = await db.payments.find_one({"razorpay_order_id": razorpay_order_id}, {"_id": 0})
         if payment:
+            amount = payment.get("amount", 0)
+            doc_earnings = round(amount * (1 - commission_pct / 100), 2)
+            plat_earnings = round(amount * (commission_pct / 100), 2)
+            await db.payments.update_one(
+                {"razorpay_order_id": razorpay_order_id},
+                {"$set": {
+                    "razorpay_payment_id": razorpay_payment_id,
+                    "status": "completed",
+                    "doctor_earnings": doc_earnings,
+                    "platform_earnings": plat_earnings
+                }}
+            )
             await db.appointments.update_one(
                 {"id": payment["appointment_id"]},
                 {"$set": {"payment_status": "completed", "payment_id": razorpay_payment_id}}
             )
-        
+
         return {"message": "Payment verified successfully"}
     except Exception as e:
         raise HTTPException(status_code=400, detail="Payment verification failed")
@@ -1584,12 +1630,22 @@ async def razorpay_webhook(request: Request):
         razorpay_order_id = payment_entity.get("order_id")
         razorpay_payment_id = payment_entity.get("id")
         if razorpay_order_id:
-            await db.payments.update_one(
-                {"razorpay_order_id": razorpay_order_id},
-                {"$set": {"razorpay_payment_id": razorpay_payment_id, "status": "completed"}}
-            )
+            config = await db.platform_config.find_one({}, {"_id": 0}) or {}
+            commission_pct = config.get("commission_percentage", 15.0)
             payment = await db.payments.find_one({"razorpay_order_id": razorpay_order_id}, {"_id": 0})
             if payment:
+                amount = payment.get("amount", 0)
+                doc_earnings = round(amount * (1 - commission_pct / 100), 2)
+                plat_earnings = round(amount * (commission_pct / 100), 2)
+                await db.payments.update_one(
+                    {"razorpay_order_id": razorpay_order_id},
+                    {"$set": {
+                        "razorpay_payment_id": razorpay_payment_id,
+                        "status": "completed",
+                        "doctor_earnings": doc_earnings,
+                        "platform_earnings": plat_earnings
+                    }}
+                )
                 await db.appointments.update_one(
                     {"id": payment["appointment_id"]},
                     {"$set": {"payment_status": "completed", "payment_id": razorpay_payment_id, "status": "confirmed"}}
@@ -1705,6 +1761,331 @@ async def reschedule_appointment(appointment_id: str, reschedule_data: Appointme
                 </div>"""
             )
     return {"message": "Appointment rescheduled successfully"}
+
+# ========== PLATFORM CONFIG ROUTES ==========
+
+@api_router.get("/admin/platform-config")
+async def get_platform_config(payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    config = await db.platform_config.find_one({}, {"_id": 0})
+    if not config:
+        return {"commission_percentage": 15.0, "referral_points_per_signup": 10}
+    return config
+
+@api_router.put("/admin/platform-config")
+async def update_platform_config(config_data: PlatformConfig, payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    update_dict = config_data.model_dump(exclude_none=True)
+    update_dict["updated_at"] = datetime.now(timezone.utc).isoformat()
+    await db.platform_config.update_one({}, {"$set": update_dict}, upsert=True)
+    return {"message": "Platform config updated"}
+
+# ========== DOCTOR EARNINGS ROUTES ==========
+
+@api_router.get("/doctors/earnings")
+async def get_doctor_earnings(payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "doctor":
+        raise HTTPException(status_code=403, detail="Doctors only")
+    doc_profile = await db.doctor_profiles.find_one({"user_id": payload["id"]}, {"_id": 0})
+    if not doc_profile:
+        raise HTTPException(status_code=404, detail="Doctor profile not found")
+    payments = await db.payments.find(
+        {"doctor_id": doc_profile["id"], "status": "completed"}, {"_id": 0}
+    ).to_list(1000)
+    total_gross = sum(p.get("amount", 0) for p in payments)
+    total_platform = sum(p.get("platform_earnings", 0) or 0 for p in payments)
+    total_net = sum(p.get("doctor_earnings", 0) or 0 for p in payments)
+    return {
+        "total_gross": round(total_gross, 2),
+        "total_platform_cut": round(total_platform, 2),
+        "total_net": round(total_net, 2),
+        "payment_count": len(payments)
+    }
+
+@api_router.get("/doctors/payment-history")
+async def get_doctor_payment_history(payload: dict = Depends(verify_token), limit: int = 20):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "doctor":
+        raise HTTPException(status_code=403, detail="Doctors only")
+    doc_profile = await db.doctor_profiles.find_one({"user_id": payload["id"]}, {"_id": 0})
+    if not doc_profile:
+        raise HTTPException(status_code=404, detail="Doctor profile not found")
+    payments = await db.payments.find(
+        {"doctor_id": doc_profile["id"], "status": "completed"}, {"_id": 0}
+    ).sort("created_at", -1).limit(limit).to_list(limit)
+    # Enrich with patient name from appointment
+    for p in payments:
+        apt = await db.appointments.find_one({"id": p.get("appointment_id")}, {"_id": 0, "patient_id": 1})
+        if apt:
+            patient = await db.users.find_one({"id": apt["patient_id"]}, {"_id": 0, "name": 1})
+            p["patient_name"] = patient["name"] if patient else "Unknown"
+    return payments
+
+# ========== ADMIN REVENUE ROUTE ==========
+
+@api_router.get("/admin/revenue")
+async def get_admin_revenue(payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    payments = await db.payments.find({"status": "completed"}, {"_id": 0}).to_list(10000)
+    total_gross = sum(p.get("amount", 0) for p in payments)
+    total_platform = sum(p.get("platform_earnings", 0) or 0 for p in payments)
+    total_doctor = sum(p.get("doctor_earnings", 0) or 0 for p in payments)
+
+    # Per-doctor breakdown
+    doctor_map: Dict[str, dict] = {}
+    for p in payments:
+        did = p.get("doctor_id")
+        if not did:
+            continue
+        if did not in doctor_map:
+            doctor_map[did] = {"doctor_id": did, "total_gross": 0, "platform_cut": 0, "net_payout": 0, "consultation_count": 0, "doctor_name": ""}
+        doctor_map[did]["total_gross"] += p.get("amount", 0)
+        doctor_map[did]["platform_cut"] += p.get("platform_earnings", 0) or 0
+        doctor_map[did]["net_payout"] += p.get("doctor_earnings", 0) or 0
+        doctor_map[did]["consultation_count"] += 1
+
+    for did, data in doctor_map.items():
+        dp = await db.doctor_profiles.find_one({"id": did}, {"_id": 0, "user_id": 1})
+        if dp:
+            du = await db.users.find_one({"id": dp["user_id"]}, {"_id": 0, "name": 1})
+            data["doctor_name"] = du["name"] if du else "Unknown"
+        data["total_gross"] = round(data["total_gross"], 2)
+        data["platform_cut"] = round(data["platform_cut"], 2)
+        data["net_payout"] = round(data["net_payout"], 2)
+
+    # By month (last 6 months)
+    from collections import defaultdict
+    monthly: Dict[str, dict] = defaultdict(lambda: {"total_gross": 0, "platform_earnings": 0})
+    for p in payments:
+        ts = p.get("created_at", "")
+        month = ts[:7] if ts else "unknown"
+        monthly[month]["total_gross"] += p.get("amount", 0)
+        monthly[month]["platform_earnings"] += p.get("platform_earnings", 0) or 0
+
+    by_month = sorted(
+        [{"month_label": k, "total_gross": round(v["total_gross"], 2), "platform_earnings": round(v["platform_earnings"], 2)} for k, v in monthly.items()],
+        key=lambda x: x["month_label"]
+    )[-6:]
+
+    return {
+        "total_gross": round(total_gross, 2),
+        "total_platform_earnings": round(total_platform, 2),
+        "total_doctor_payouts": round(total_doctor, 2),
+        "by_doctor": list(doctor_map.values()),
+        "by_month": by_month
+    }
+
+# ========== AI MONITORING ROUTE ==========
+
+@api_router.get("/admin/ai-monitoring")
+async def get_ai_monitoring(payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    assessments = await db.ai_assessments.find({}, {"_id": 0}).to_list(10000)
+    total_requests = len(assessments)
+    emergency_alerts = sum(1 for a in assessments if a.get("emergency_alert") or a.get("risk_level", "").lower() == "emergency")
+
+    # Risk distribution
+    risk_dist: Dict[str, int] = {"low": 0, "medium": 0, "high": 0, "critical": 0, "emergency": 0}
+    for a in assessments:
+        rl = (a.get("risk_level") or "medium").lower()
+        if rl in risk_dist:
+            risk_dist[rl] += 1
+        else:
+            risk_dist["medium"] += 1
+
+    # Top specialists
+    from collections import Counter
+    specialist_counts = Counter(a.get("suggested_specialist", "") for a in assessments if a.get("suggested_specialist"))
+    top_specialists = [{"specialist": k, "count": v} for k, v in specialist_counts.most_common(5)]
+
+    # Requests by day (last 30 days)
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    recent = [a for a in assessments if (a.get("created_at") or "") >= cutoff]
+    day_counts: Dict[str, int] = {}
+    for a in recent:
+        day = (a.get("created_at") or "")[:10]
+        day_counts[day] = day_counts.get(day, 0) + 1
+    requests_by_day = sorted([{"date": k, "count": v} for k, v in day_counts.items()], key=lambda x: x["date"])
+
+    return {
+        "total_requests": total_requests,
+        "emergency_alerts_count": emergency_alerts,
+        "risk_distribution": risk_dist,
+        "top_specialists": top_specialists,
+        "requests_by_day": requests_by_day,
+        "avg_per_day": round(total_requests / 30, 1) if total_requests else 0
+    }
+
+# ========== ADVERTISEMENT ROUTES ==========
+
+@api_router.post("/admin/advertisements")
+async def create_advertisement(ad_data: AdvertisementCreate, payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    ad = Advertisement(**ad_data.model_dump())
+    ad_dict = ad.model_dump()
+    ad_dict["created_at"] = datetime.now(timezone.utc).isoformat()
+    await db.advertisements.insert_one(ad_dict)
+    ad_dict.pop("_id", None)
+    return ad_dict
+
+@api_router.get("/admin/advertisements")
+async def list_advertisements_admin(payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    ads = await db.advertisements.find({}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return ads
+
+@api_router.put("/admin/advertisements/{ad_id}")
+async def update_advertisement(ad_id: str, ad_data: AdvertisementCreate, payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    update_dict = {k: v for k, v in ad_data.model_dump().items() if v is not None}
+    result = await db.advertisements.update_one({"id": ad_id}, {"$set": update_dict})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Ad not found")
+    return {"message": "Advertisement updated"}
+
+@api_router.delete("/admin/advertisements/{ad_id}")
+async def delete_advertisement(ad_id: str, payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    result = await db.advertisements.delete_one({"id": ad_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Ad not found")
+    return {"message": "Advertisement deleted"}
+
+@api_router.get("/advertisements")
+async def get_active_advertisements(position: Optional[str] = None):
+    query: dict = {"is_active": True}
+    if position:
+        query["position"] = position
+    ads = await db.advertisements.find(query, {"_id": 0}).to_list(10)
+    if ads:
+        ids = [a["id"] for a in ads]
+        await db.advertisements.update_many({"id": {"$in": ids}}, {"$inc": {"impressions": 1}})
+    return ads
+
+@api_router.post("/advertisements/{ad_id}/click")
+async def track_ad_click(ad_id: str):
+    await db.advertisements.update_one({"id": ad_id}, {"$inc": {"clicks": 1}})
+    return {"message": "Click tracked"}
+
+# ========== ADMIN REFERRAL STATS ==========
+
+@api_router.get("/admin/referral/stats")
+async def get_admin_referral_stats(payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    total_referrals = await db.users.count_documents({"referred_by": {"$ne": None}})
+    users_with_points = await db.users.find({"referral_points": {"$gt": 0}}, {"_id": 0}).to_list(10000)
+    total_points_issued = sum(u.get("referral_points", 0) for u in users_with_points)
+    # Leaderboard: top 20 by referral_points
+    top_referrers = await db.users.find(
+        {"referral_points": {"$gt": 0}},
+        {"_id": 0, "name": 1, "email": 1, "referral_code": 1, "referral_points": 1}
+    ).sort("referral_points", -1).limit(20).to_list(20)
+    # Count referrals per user
+    for u in top_referrers:
+        u["total_referrals"] = await db.users.count_documents({"referred_by": u["referral_code"]})
+    config = await db.platform_config.find_one({}, {"_id": 0}) or {}
+    return {
+        "total_referrals": total_referrals,
+        "total_points_issued": total_points_issued,
+        "points_per_signup": config.get("referral_points_per_signup", 10),
+        "leaderboard": top_referrers
+    }
+
+# ========== HEALTH RECORDS PDF EXPORT ==========
+
+@api_router.get("/health-records/export")
+async def export_health_records_pdf(payload: dict = Depends(verify_token)):
+    records = await db.health_records.find({"user_id": payload["id"]}, {"_id": 0}).sort("date", -1).to_list(1000)
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
+    from reportlab.lib import colors
+    from io import BytesIO
+
+    buffer = BytesIO()
+    p = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+
+    # Header
+    p.setFont("Helvetica-Bold", 18)
+    p.drawString(50, height - 50, "Alambana Healthcare")
+    p.setFont("Helvetica", 10)
+    p.drawString(50, height - 68, "A Unit of Sejal Engitech Pvt Ltd")
+    p.setFont("Helvetica-Bold", 13)
+    p.drawString(50, height - 95, "Personal Health Report")
+    p.setFont("Helvetica", 10)
+    p.drawString(50, height - 112, f"Patient: {user.get('name', '')}   |   Exported: {datetime.now(timezone.utc).strftime('%Y-%m-%d')}")
+    p.drawString(50, height - 128, f"Total Records: {len(records)}")
+
+    # Table header
+    y = height - 160
+    headers = ["Date", "Type", "Weight", "BP", "O2%", "Sugar", "HR", "Notes"]
+    col_x = [50, 110, 165, 215, 295, 345, 400, 445]
+    p.setFont("Helvetica-Bold", 9)
+    p.setFillColorRGB(0.05, 0.58, 0.53)
+    p.rect(45, y - 4, width - 90, 16, fill=1, stroke=0)
+    p.setFillColorRGB(1, 1, 1)
+    for i, h in enumerate(headers):
+        p.drawString(col_x[i], y, h)
+    p.setFillColorRGB(0, 0, 0)
+    y -= 20
+
+    p.setFont("Helvetica", 8)
+    for idx, r in enumerate(records):
+        if y < 60:
+            p.showPage()
+            y = height - 60
+            p.setFont("Helvetica", 8)
+        if idx % 2 == 0:
+            p.setFillColorRGB(0.97, 0.97, 0.97)
+            p.rect(45, y - 4, width - 90, 14, fill=1, stroke=0)
+            p.setFillColorRGB(0, 0, 0)
+        bp = f"{r.get('blood_pressure_systolic','')}/{r.get('blood_pressure_diastolic','')}" if r.get('blood_pressure_systolic') else "-"
+        row = [
+            str(r.get("date", ""))[:10],
+            str(r.get("record_type", "")),
+            str(r.get("weight", "-")) + " kg" if r.get("weight") else "-",
+            bp,
+            str(r.get("oxygen_level", "-")),
+            str(r.get("sugar_level", "-")),
+            str(r.get("heart_rate", "-")),
+            (r.get("notes", "") or "")[:30]
+        ]
+        for i, val in enumerate(row):
+            p.drawString(col_x[i], y, val)
+        y -= 16
+
+    # Footer
+    p.setFont("Helvetica", 8)
+    p.drawString(50, 40, "Alambana Healthcare — Confidential Patient Health Report")
+    p.drawString(50, 28, "Support: 8084161465 | alambana.in")
+    p.showPage()
+    p.save()
+
+    pdf_bytes = buffer.getvalue()
+    pdf_b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+    filename = f"health_report_{user.get('name','patient').replace(' ','_')}_{datetime.now(timezone.utc).strftime('%Y%m%d')}.pdf"
+    return {"pdf_base64": pdf_b64, "filename": filename}
 
 @api_router.get("/health")
 async def health_check():

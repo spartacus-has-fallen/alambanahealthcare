@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Calendar, FileHeart, BrainCircuit, Gift, X, RotateCcw, FileText, Star } from 'lucide-react';
+import { Calendar, FileHeart, BrainCircuit, Gift, X, RotateCcw, FileText, Star, CreditCard } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,6 +18,7 @@ const PatientDashboard = () => {
   const [appointments, setAppointments] = useState([]);
   const [healthRecords, setHealthRecords] = useState([]);
   const [referralStats, setReferralStats] = useState(null);
+  const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Reschedule dialog
@@ -35,14 +36,16 @@ const PatientDashboard = () => {
 
   const fetchDashboardData = async () => {
     try {
-      const [appointmentsRes, recordsRes, referralRes] = await Promise.all([
+      const [appointmentsRes, recordsRes, referralRes, paymentsRes] = await Promise.all([
         api.get('/appointments'),
         api.get('/health-records'),
-        api.get('/referral/stats')
+        api.get('/referral/stats'),
+        api.get('/payments/history')
       ]);
       setAppointments(appointmentsRes.data.slice(0, 5));
       setHealthRecords(recordsRes.data.slice(0, 5));
       setReferralStats(referralRes.data);
+      setPayments(paymentsRes.data.slice(0, 10));
     } catch (error) {
       toast.error('Failed to load dashboard data');
     } finally {
@@ -263,6 +266,45 @@ const PatientDashboard = () => {
             )}
           </CardContent>
         </Card>
+
+        {/* Payment History */}
+        {payments.length > 0 && (
+          <Card className="mt-8 rounded-2xl">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CreditCard className="h-5 w-5" /> Payment History
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left py-2 pr-4">Date</th>
+                      <th className="text-left py-2 pr-4">Amount</th>
+                      <th className="text-left py-2 pr-4">Status</th>
+                      <th className="text-left py-2">Razorpay ID</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payments.map((p, i) => (
+                      <tr key={i} className="border-b hover:bg-slate-50" data-testid={`payment-row-${i}`}>
+                        <td className="py-2 pr-4 text-slate-500">{p.created_at?.slice(0, 10)}</td>
+                        <td className="py-2 pr-4 font-semibold">₹{p.amount}</td>
+                        <td className="py-2 pr-4">
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${p.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : p.status === 'failed' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                            {p.status}
+                          </span>
+                        </td>
+                        <td className="py-2 text-slate-400 text-xs font-mono">{p.razorpay_payment_id || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Reschedule Dialog */}

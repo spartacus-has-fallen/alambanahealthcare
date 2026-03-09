@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Activity, FileHeart, Trash2, TrendingUp } from 'lucide-react';
+import { Plus, Activity, FileHeart, Trash2, TrendingUp, Download } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 const HealthRecords = () => {
   const [records, setRecords] = useState([]);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [exportLoading, setExportLoading] = useState(false);
   const [formData, setFormData] = useState({
     record_type: 'weekly',
     date: new Date().toISOString().split('T')[0],
@@ -93,6 +94,29 @@ const HealthRecords = () => {
     }
   };
 
+  const handleExportPDF = async () => {
+    setExportLoading(true);
+    try {
+      const res = await api.get('/health-records/export');
+      const { pdf_base64, filename } = res.data;
+      const byteChars = atob(pdf_base64);
+      const byteArr = new Uint8Array(byteChars.length);
+      for (let i = 0; i < byteChars.length; i++) byteArr[i] = byteChars.charCodeAt(i);
+      const blob = new Blob([byteArr], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'health_report.pdf';
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Health report downloaded');
+    } catch {
+      toast.error('Failed to export PDF');
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
   // Prepare chart data
   const chartData = records.slice(0, 10).reverse().map(record => ({
     date: record.date,
@@ -112,6 +136,11 @@ const HealthRecords = () => {
             <h1 className="text-3xl font-bold mb-2">Health Records</h1>
             <p className="text-slate-600">Track your vitals and health progress</p>
           </div>
+          <div className="flex gap-2">
+            <Button variant="outline" className="gap-2 rounded-full" onClick={handleExportPDF} disabled={exportLoading || records.length === 0} data-testid="export-pdf-btn">
+              <Download className="h-4 w-4" />
+              {exportLoading ? 'Exporting...' : 'Export PDF'}
+            </Button>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
               <Button className="gap-2 rounded-full bg-primary hover:bg-primary/90" data-testid="add-record-dialog-button">
@@ -265,6 +294,7 @@ const HealthRecords = () => {
               </form>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
 
         {/* Charts */}
