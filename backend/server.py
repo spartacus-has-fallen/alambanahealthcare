@@ -2094,7 +2094,7 @@ async def list_all_users(payload: dict = Depends(verify_token)):
         raise HTTPException(status_code=403, detail="Admin only")
     users = await db.users.find(
         {"role": "patient"},
-        {"_id": 0, "password_hash": 0}
+        {"_id": 0, "password": 0}
     ).sort("created_at", -1).to_list(500)
     return users
 
@@ -2105,7 +2105,7 @@ async def list_all_doctors(payload: dict = Depends(verify_token)):
         raise HTTPException(status_code=403, detail="Admin only")
     profiles = await db.doctor_profiles.find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
     for prof in profiles:
-        u = await db.users.find_one({"id": prof["user_id"]}, {"_id": 0, "password_hash": 0})
+        u = await db.users.find_one({"id": prof["user_id"]}, {"_id": 0, "password": 0, "password_hash": 0})
         prof["user"] = u or {}
     return profiles
 
@@ -2139,6 +2139,14 @@ async def seed_demo_data(payload: dict = Depends(verify_token)):
         return bcrypt.hashpw(pw.encode(), bcrypt.gensalt()).decode()
 
     now_ts = datetime.now(timezone.utc).isoformat()
+
+    # Migrate any existing users that have password_hash → rename to password
+    migrated = await db.users.update_many(
+        {"password_hash": {"$exists": True}},
+        {"$rename": {"password_hash": "password"}}
+    )
+    if migrated.modified_count:
+        created.append(f"migrated:{migrated.modified_count} password fields")
 
     DOCTORS = [
         {"email": "dr.arjun.sharma@alambana.in",  "name": "Dr. Arjun Sharma",  "phone": "9876543210",
@@ -2183,7 +2191,7 @@ async def seed_demo_data(payload: dict = Depends(verify_token)):
             continue
         uid = str(uuid.uuid4())
         u = {"id": uid, "email": d["email"], "name": d["name"], "phone": d["phone"],
-             "role": "doctor", "password_hash": hp("Doctor@1234"), "is_active": True,
+             "role": "doctor", "password": hp("Doctor@1234"), "is_active": True,
              "referral_code": str(uuid.uuid4())[:8].upper(), "referral_points": 0,
              "referred_by": None, "created_at": now_ts}
         await db.users.insert_one(u); u.pop("_id", None)
@@ -2203,7 +2211,7 @@ async def seed_demo_data(payload: dict = Depends(verify_token)):
         if await db.users.find_one({"email": p["email"]}):
             continue
         uid = str(uuid.uuid4())
-        u = {"id": uid, "role": "patient", "password_hash": hp("Patient@1234"), "is_active": True,
+        u = {"id": uid, "role": "patient", "password": hp("Patient@1234"), "is_active": True,
              "referral_code": str(uuid.uuid4())[:8].upper(), "referral_points": 0,
              "referred_by": None, "created_at": now_ts, **p}
         await db.users.insert_one(u); u.pop("_id", None)
