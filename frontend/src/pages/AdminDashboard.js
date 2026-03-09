@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { Users, Stethoscope, Calendar, DollarSign, CheckCircle, X, Settings, TrendingUp, Bot, Megaphone, Gift, Trash2, ToggleLeft, ToggleRight, Upload, Mail, Phone, Star, Clock } from 'lucide-react';
+import { Users, Stethoscope, Calendar, DollarSign, CheckCircle, X, Settings, TrendingUp, Bot, Megaphone, Gift, Trash2, ToggleLeft, ToggleRight, Upload, Mail, Phone, Star, Clock, AlertTriangle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,6 +31,10 @@ const AdminDashboard = () => {
   const [contacts, setContacts] = useState([]);
   const [expandedContact, setExpandedContact] = useState(null);
   const [expandedDoctor, setExpandedDoctor] = useState(null);
+  const [allComplaints, setAllComplaints] = useState([]);
+  const [expandedComplaint, setExpandedComplaint] = useState(null);
+  const [complaintNote, setComplaintNote] = useState({});
+  const [complaintStatus, setComplaintStatus] = useState({});
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -43,6 +47,7 @@ const AdminDashboard = () => {
     fetchAllUsers();
     fetchAllDoctors();
     fetchContacts();
+    fetchAllComplaints();
   }, []);
 
   const fetchAdminData = async () => {
@@ -114,6 +119,27 @@ const AdminDashboard = () => {
       const res = await api.get('/admin/contacts');
       setContacts(res.data);
     } catch {}
+  };
+
+  const fetchAllComplaints = async () => {
+    try {
+      const res = await api.get('/admin/complaints');
+      setAllComplaints(res.data);
+    } catch {}
+  };
+
+  const updateComplaint = async (id) => {
+    try {
+      await api.put(`/admin/complaints/${id}`, {
+        status: complaintStatus[id],
+        admin_note: complaintNote[id]
+      });
+      toast.success('Complaint updated');
+      fetchAllComplaints();
+      setExpandedComplaint(null);
+    } catch {
+      toast.error('Failed to update complaint');
+    }
   };
 
   const deleteContact = async (id) => {
@@ -313,6 +339,9 @@ const AdminDashboard = () => {
             </TabsTrigger>
             <TabsTrigger value="contacts" data-testid="contacts-tab">
               <Mail className="h-3 w-3 mr-1" /> Contact Forms ({contacts.length})
+            </TabsTrigger>
+            <TabsTrigger value="complaints" data-testid="complaints-tab">
+              <AlertTriangle className="h-3 w-3 mr-1" /> Complaints ({allComplaints.filter(c => c.status === 'pending').length} pending)
             </TabsTrigger>
           </TabsList>
 
@@ -900,6 +929,83 @@ const AdminDashboard = () => {
                         )}
                       </div>
                     ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* --- COMPLAINTS --- */}
+          <TabsContent value="complaints" className="mt-6">
+            <Card className="rounded-2xl">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-rose-500" /> Grievance Tracker ({allComplaints.length})</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {allComplaints.length === 0 ? (
+                  <p className="text-slate-500 text-center py-8">No complaints filed yet.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {allComplaints.map((c) => {
+                      const isOld = c.status === 'pending' && c.created_at && ((Date.now() - new Date(c.created_at).getTime()) > 48 * 3600 * 1000);
+                      return (
+                        <div key={c.id} className="border rounded-xl overflow-hidden" data-testid={`complaint-${c.id}`}>
+                          <div
+                            className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50"
+                            onClick={() => {
+                              setExpandedComplaint(expandedComplaint === c.id ? null : c.id);
+                              setComplaintNote(n => ({ ...n, [c.id]: c.admin_note || '' }));
+                              setComplaintStatus(s => ({ ...s, [c.id]: c.status }));
+                            }}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div>
+                                <p className="font-semibold text-sm">{c.patient_name}</p>
+                                <p className="text-xs text-slate-500 capitalize">{c.complaint_type.replace('_', ' ')} · {c.created_at?.slice(0, 10)}</p>
+                              </div>
+                              {isOld && <span className="text-xs text-red-600 font-medium">⚠ 48h+ old</span>}
+                            </div>
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                              c.status === 'resolved' ? 'bg-green-100 text-green-700' :
+                              c.status === 'in_review' ? 'bg-amber-100 text-amber-700' :
+                              c.status === 'closed' ? 'bg-slate-100 text-slate-600' :
+                              'bg-red-100 text-red-700'
+                            }`}>{c.status}</span>
+                          </div>
+                          {expandedComplaint === c.id && (
+                            <div className="px-4 pb-4 border-t bg-slate-50 space-y-3 pt-3">
+                              <p className="text-sm"><span className="font-medium">Description:</span> {c.description}</p>
+                              {c.appointment_id && <p className="text-xs text-slate-500">Appointment: {c.appointment_id}</p>}
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div>
+                                  <label className="text-xs font-medium text-slate-600 block mb-1">Status</label>
+                                  <Select value={complaintStatus[c.id] || c.status} onValueChange={v => setComplaintStatus(s => ({ ...s, [c.id]: v }))}>
+                                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="pending">Pending</SelectItem>
+                                      <SelectItem value="in_review">In Review</SelectItem>
+                                      <SelectItem value="resolved">Resolved</SelectItem>
+                                      <SelectItem value="closed">Closed</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div>
+                                  <label className="text-xs font-medium text-slate-600 block mb-1">Admin Note</label>
+                                  <Input
+                                    className="h-8 text-xs"
+                                    placeholder="Response to patient..."
+                                    value={complaintNote[c.id] || ''}
+                                    onChange={e => setComplaintNote(n => ({ ...n, [c.id]: e.target.value }))}
+                                    data-testid={`complaint-note-${c.id}`}
+                                  />
+                                </div>
+                              </div>
+                              <Button size="sm" className="rounded-full" onClick={() => updateComplaint(c.id)} data-testid={`save-complaint-${c.id}`}>Save</Button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </CardContent>

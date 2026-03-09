@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Calendar, CheckCircle, FileText, Star, DollarSign, BookOpen, Plus, X } from 'lucide-react';
+import { Calendar, CheckCircle, FileText, Star, DollarSign, BookOpen, Plus, X, Wifi, WifiOff, MessageCircle, ShieldCheck } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -28,6 +28,9 @@ const DoctorDashboard = () => {
   const [prescriptionForm, setPrescriptionForm] = useState({ diagnosis: '', medications: '', instructions: '', follow_up_date: '' });
   const [newSlot, setNewSlot] = useState('');
   const [blogForm, setBlogForm] = useState({ title: '', category: 'General Health', tags: '', content: '', featured_image_base64: '', is_published: true, is_featured: false });
+  const [isOnline, setIsOnline] = useState(false);
+  const [questions, setQuestions] = useState([]);
+  const [answerTexts, setAnswerTexts] = useState({});
   const [formData, setFormData] = useState({
     specialization: '', qualification: '', experience_years: '',
     license_number: '', bio: '', consultation_fee: '',
@@ -38,12 +41,14 @@ const DoctorDashboard = () => {
     fetchDoctorData();
     fetchEarnings();
     fetchMyBlogs();
+    fetchQuestions();
   }, []);
 
   const fetchDoctorData = async () => {
     try {
       const profileRes = await api.get('/doctors/profile/me');
       setProfile(profileRes.data);
+      setIsOnline(profileRes.data.is_online || false);
       setFormData({
         specialization: profileRes.data.specialization || '',
         qualification: profileRes.data.qualification || '',
@@ -81,6 +86,37 @@ const DoctorDashboard = () => {
       const res = await api.get('/blogs?published_only=false');
       setMyBlogs(res.data.slice(0, 5));
     } catch {}
+  };
+
+  const fetchQuestions = async () => {
+    try {
+      const res = await api.get('/doctors/questions/inbox');
+      setQuestions(res.data);
+    } catch {}
+  };
+
+  const toggleOnlineStatus = async () => {
+    const next = !isOnline;
+    try {
+      await api.put('/doctors/online-status', { is_online: next });
+      setIsOnline(next);
+      toast.success(next ? 'You are now online and visible to patients' : 'You are now offline');
+    } catch {
+      toast.error('Failed to update status');
+    }
+  };
+
+  const submitAnswer = async (qId) => {
+    const answer = answerTexts[qId]?.trim();
+    if (!answer) return;
+    try {
+      await api.put(`/doctors/questions/${qId}/answer`, { answer });
+      toast.success('Answer sent');
+      setAnswerTexts(t => ({ ...t, [qId]: '' }));
+      fetchQuestions();
+    } catch {
+      toast.error('Failed to send answer');
+    }
   };
 
   const handleSaveProfile = async (e) => {
@@ -202,9 +238,19 @@ const DoctorDashboard = () => {
             <h1 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Manrope, sans-serif' }}>Doctor Dashboard</h1>
             <p className="text-slate-600">Manage your consultations and profile</p>
           </div>
-          <Button onClick={() => setProfileDialogOpen(true)} variant="outline" className="rounded-full" data-testid="edit-profile-button">
-            Edit Profile
-          </Button>
+          <div className="flex items-center gap-3">
+            <button
+              data-testid="online-toggle"
+              onClick={toggleOnlineStatus}
+              className={`flex items-center gap-2 px-5 py-2 rounded-full font-semibold text-sm transition-colors ${isOnline ? 'bg-green-500 text-white hover:bg-green-600' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'}`}
+            >
+              {isOnline ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
+              {isOnline ? 'Available Now' : 'Go Online'}
+            </button>
+            <Button onClick={() => setProfileDialogOpen(true)} variant="outline" className="rounded-full" data-testid="edit-profile-button">
+              Edit Profile
+            </Button>
+          </div>
         </div>
 
         {/* Profile Status */}
@@ -222,9 +268,14 @@ const DoctorDashboard = () => {
                 </div>
                 <div className="text-right">
                   {profile.is_approved ? (
-                    <div className="flex items-center gap-2 text-emerald-600">
-                      <CheckCircle className="h-5 w-5" />
-                      <span className="font-semibold">Approved</span>
+                    <div className="flex flex-col items-end gap-1">
+                      <div className="flex items-center gap-2 text-emerald-600">
+                        <CheckCircle className="h-5 w-5" />
+                        <span className="font-semibold">Approved</span>
+                      </div>
+                      <div className="flex items-center gap-1 text-xs text-green-600 font-medium">
+                        <ShieldCheck className="h-3 w-3" /> Verified by Alambana
+                      </div>
                     </div>
                   ) : (
                     <div className="px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-sm font-semibold">
@@ -265,6 +316,12 @@ const DoctorDashboard = () => {
             <TabsTrigger value="appointments"><Calendar className="h-3 w-3 mr-1" /> Appointments</TabsTrigger>
             <TabsTrigger value="earnings" data-testid="earnings-tab"><DollarSign className="h-3 w-3 mr-1" /> Earnings</TabsTrigger>
             <TabsTrigger value="blogs" data-testid="blogs-tab"><BookOpen className="h-3 w-3 mr-1" /> Write Blog</TabsTrigger>
+            <TabsTrigger value="questions" data-testid="questions-tab">
+              <MessageCircle className="h-3 w-3 mr-1" /> Questions
+              {questions.filter(q => !q.is_answered).length > 0 && (
+                <span className="ml-1 bg-red-500 text-white text-xs rounded-full px-1.5">{questions.filter(q => !q.is_answered).length}</span>
+              )}
+            </TabsTrigger>
           </TabsList>
 
           {/* --- APPOINTMENTS --- */}
@@ -449,6 +506,49 @@ const DoctorDashboard = () => {
                 </CardContent>
               </Card>
             )}
+          </TabsContent>
+
+          {/* --- QUESTIONS INBOX --- */}
+          <TabsContent value="questions" className="mt-4">
+            <Card className="rounded-2xl">
+              <CardHeader><CardTitle className="flex items-center gap-2"><MessageCircle className="h-5 w-5" /> Patient Questions</CardTitle></CardHeader>
+              <CardContent>
+                {questions.length === 0 ? (
+                  <p className="text-slate-600 text-center py-8">No questions yet. Patients can ask you questions before booking.</p>
+                ) : (
+                  <div className="space-y-4">
+                    {questions.map((q) => (
+                      <div key={q.id} className={`p-4 rounded-xl border ${q.is_answered ? 'bg-slate-50 border-slate-200' : 'bg-amber-50 border-amber-200'}`} data-testid={`question-${q.id}`}>
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <div>
+                            <p className="font-semibold text-sm">{q.patient_name}</p>
+                            <p className="text-xs text-slate-500">{q.created_at?.slice(0, 10)}</p>
+                          </div>
+                          {!q.is_answered && <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">Unanswered</span>}
+                          {q.is_answered && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Answered</span>}
+                        </div>
+                        <p className="text-sm mb-3"><span className="font-medium">Q:</span> {q.question}</p>
+                        {q.is_answered ? (
+                          <p className="text-sm text-slate-600 bg-white rounded-lg p-2 border"><span className="font-medium">A:</span> {q.answer}</p>
+                        ) : (
+                          <div className="flex gap-2">
+                            <Textarea
+                              placeholder="Type your answer..."
+                              rows={2}
+                              value={answerTexts[q.id] || ''}
+                              onChange={e => setAnswerTexts(t => ({ ...t, [q.id]: e.target.value }))}
+                              className="flex-1 text-sm"
+                              data-testid={`answer-input-${q.id}`}
+                            />
+                            <Button size="sm" className="rounded-full self-end" onClick={() => submitAnswer(q.id)} data-testid={`send-answer-${q.id}`}>Send</Button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>

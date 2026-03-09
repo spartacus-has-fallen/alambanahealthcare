@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Calendar, FileHeart, BrainCircuit, Gift, X, RotateCcw, FileText, Star, CreditCard } from 'lucide-react';
+import { Calendar, FileHeart, BrainCircuit, Gift, X, RotateCcw, FileText, Star, CreditCard, Bell, Activity, AlertTriangle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { useNavigate } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import RatingForm from '@/components/RatingForm';
@@ -15,11 +18,18 @@ import { toast } from 'sonner';
 
 const PatientDashboard = () => {
   const user = getUser();
+  const navigate = useNavigate();
   const [appointments, setAppointments] = useState([]);
   const [healthRecords, setHealthRecords] = useState([]);
   const [referralStats, setReferralStats] = useState(null);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [followups, setFollowups] = useState([]);
+  const [healthScore, setHealthScore] = useState(null);
+  const [myComplaints, setMyComplaints] = useState([]);
+  const [complaintDialog, setComplaintDialog] = useState(false);
+  const [complaintForm, setComplaintForm] = useState({ complaint_type: 'other', description: '', appointment_id: '' });
+  const [submittingComplaint, setSubmittingComplaint] = useState(false);
 
   // Reschedule dialog
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
@@ -50,6 +60,30 @@ const PatientDashboard = () => {
       toast.error('Failed to load dashboard data');
     } finally {
       setLoading(false);
+    }
+    // Non-critical fetches
+    api.get('/patients/followups').then(r => setFollowups(r.data)).catch(() => {});
+    api.get('/health-records/score').then(r => setHealthScore(r.data)).catch(() => {});
+    api.get('/complaints/my').then(r => setMyComplaints(r.data)).catch(() => {});
+  };
+
+  const submitComplaint = async () => {
+    if (!complaintForm.description.trim()) { toast.error('Please describe your complaint'); return; }
+    setSubmittingComplaint(true);
+    try {
+      await api.post('/complaints', {
+        complaint_type: complaintForm.complaint_type,
+        description: complaintForm.description.trim(),
+        appointment_id: complaintForm.appointment_id || undefined
+      });
+      toast.success('Complaint filed. We will respond within 48 hours.');
+      setComplaintDialog(false);
+      setComplaintForm({ complaint_type: 'other', description: '', appointment_id: '' });
+      api.get('/complaints/my').then(r => setMyComplaints(r.data)).catch(() => {});
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Failed to file complaint');
+    } finally {
+      setSubmittingComplaint(false);
     }
   };
 
@@ -139,6 +173,83 @@ const PatientDashboard = () => {
               </Card>
             </Link>
           ))}
+        </div>
+
+        {/* Health Score + Follow-up Reminders */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          {/* Health Score */}
+          <Card className="rounded-2xl">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base"><Activity className="h-5 w-5 text-primary" /> Health Score</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {healthScore?.score != null ? (
+                <div className="flex items-center gap-6">
+                  <div className={`w-24 h-24 rounded-full border-4 flex flex-col items-center justify-center flex-shrink-0 ${
+                    healthScore.score >= 80 ? 'border-green-500' :
+                    healthScore.score >= 60 ? 'border-amber-400' :
+                    healthScore.score >= 40 ? 'border-orange-400' : 'border-red-500'
+                  }`} data-testid="health-score-circle">
+                    <span className={`text-3xl font-bold ${
+                      healthScore.score >= 80 ? 'text-green-600' :
+                      healthScore.score >= 60 ? 'text-amber-500' :
+                      healthScore.score >= 40 ? 'text-orange-500' : 'text-red-500'
+                    }`}>{healthScore.score}</span>
+                    <span className="text-xs text-slate-500">/ 100</span>
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-sm mb-2">{healthScore.grade}</p>
+                    {Object.entries(healthScore.breakdown || {}).map(([key, val]) => (
+                      <div key={key} className="mb-1">
+                        <div className="flex justify-between text-xs text-slate-500 mb-0.5">
+                          <span>{key.replace(/_/g, ' ')}</span>
+                          <span>{val.points}/{val.max}</span>
+                        </div>
+                        <div className="h-1.5 bg-slate-100 rounded-full">
+                          <div className="h-1.5 bg-primary rounded-full" style={{ width: `${(val.points / val.max) * 100}%` }} />
+                        </div>
+                      </div>
+                    ))}
+                    <p className="text-xs text-slate-400 mt-1">Last updated: {healthScore.last_updated?.slice(0, 10)}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-4">
+                  <Activity className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+                  <p className="text-sm text-slate-500">{healthScore?.message || 'Add health records to see your score'}</p>
+                  <Button size="sm" variant="outline" className="rounded-full mt-3" onClick={() => navigate('/health-records')}>Log Vitals</Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Follow-up Reminders */}
+          <Card className="rounded-2xl">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base"><Bell className="h-5 w-5 text-amber-500" /> Follow-up Reminders</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {followups.length === 0 ? (
+                <div className="text-center py-4">
+                  <Bell className="h-10 w-10 text-slate-300 mx-auto mb-2" />
+                  <p className="text-sm text-slate-500">No upcoming follow-ups</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {followups.map((f, i) => (
+                    <div key={i} className="bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-center justify-between gap-3" data-testid={`followup-${i}`}>
+                      <div>
+                        <p className="font-semibold text-sm text-amber-800">Dr. {f.doctor_name}</p>
+                        <p className="text-xs text-amber-700">{f.diagnosis || 'Follow-up consultation'}</p>
+                        <p className="text-xs text-amber-600 mt-0.5">Due: {f.follow_up_date}</p>
+                      </div>
+                      <Button size="sm" className="rounded-full flex-shrink-0" onClick={() => navigate('/doctors')}>Book</Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
         {/* Stats */}
@@ -306,6 +417,105 @@ const PatientDashboard = () => {
           </Card>
         )}
       </div>
+
+        {/* Complaints Section */}
+        <Card className="mt-8 rounded-2xl">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-rose-500" /> Grievance Tracker</CardTitle>
+              <Button size="sm" variant="outline" className="rounded-full" onClick={() => setComplaintDialog(true)} data-testid="file-complaint-btn">
+                File a Complaint
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {myComplaints.length === 0 ? (
+              <p className="text-sm text-slate-500 text-center py-4">No complaints filed. We aim to resolve all issues within 48 hours.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left py-2 pr-4">Type</th>
+                      <th className="text-left py-2 pr-4">Date</th>
+                      <th className="text-left py-2 pr-4">Status</th>
+                      <th className="text-left py-2">Admin Note</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {myComplaints.map((c, i) => (
+                      <tr key={c.id} className="border-b hover:bg-slate-50" data-testid={`complaint-row-${i}`}>
+                        <td className="py-2 pr-4 capitalize">{c.complaint_type.replace('_', ' ')}</td>
+                        <td className="py-2 pr-4 text-slate-500">{c.created_at?.slice(0, 10)}</td>
+                        <td className="py-2 pr-4">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                            c.status === 'resolved' ? 'bg-green-100 text-green-700' :
+                            c.status === 'in_review' ? 'bg-amber-100 text-amber-700' :
+                            c.status === 'closed' ? 'bg-slate-100 text-slate-600' :
+                            'bg-red-100 text-red-700'
+                          }`}>{c.status}</span>
+                        </td>
+                        <td className="py-2 text-slate-500 text-xs">{c.admin_note || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Complaint Dialog */}
+      <Dialog open={complaintDialog} onOpenChange={setComplaintDialog}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>File a Complaint</DialogTitle></DialogHeader>
+          <p className="text-sm text-slate-600">We take every complaint seriously and respond within 48 hours.</p>
+          <div className="space-y-4">
+            <div>
+              <Label>Type</Label>
+              <Select value={complaintForm.complaint_type} onValueChange={v => setComplaintForm(f => ({ ...f, complaint_type: v }))}>
+                <SelectTrigger className="mt-1" data-testid="complaint-type-select"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="payment">Payment Issue</SelectItem>
+                  <SelectItem value="doctor_behavior">Doctor Behavior</SelectItem>
+                  <SelectItem value="technical">Technical Problem</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Related Appointment (optional)</Label>
+              <Select value={complaintForm.appointment_id} onValueChange={v => setComplaintForm(f => ({ ...f, appointment_id: v }))}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Select appointment..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">None</SelectItem>
+                  {appointments.map(a => (
+                    <SelectItem key={a.id} value={a.id}>{a.appointment_date} · {a.status}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Description *</Label>
+              <Textarea
+                className="mt-1"
+                rows={4}
+                placeholder="Describe your issue in detail..."
+                value={complaintForm.description}
+                onChange={e => setComplaintForm(f => ({ ...f, description: e.target.value }))}
+                data-testid="complaint-description"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" className="rounded-full" onClick={() => setComplaintDialog(false)}>Cancel</Button>
+            <Button className="rounded-full" onClick={submitComplaint} disabled={submittingComplaint} data-testid="submit-complaint-btn">
+              {submittingComplaint ? 'Submitting...' : 'Submit Complaint'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Reschedule Dialog */}
       <Dialog open={rescheduleOpen} onOpenChange={setRescheduleOpen}>

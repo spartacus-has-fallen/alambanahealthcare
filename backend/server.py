@@ -107,6 +107,8 @@ class DoctorProfile(BaseModel):
     approved_at: Optional[datetime] = None
     rating: float = 0.0
     total_consultations: int = 0
+    is_online: bool = False
+    online_since: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class DoctorProfileCreate(BaseModel):
@@ -2255,6 +2257,270 @@ async def seed_demo_data(payload: dict = Depends(verify_token)):
                 "doctors": "Doctor@1234 (all 5 doctors)",
                 "patients": "Patient@1234 (rahul.verma@gmail.com, sneha.patel@gmail.com, vikram.das@gmail.com)"
             }}
+
+
+# ========== DOCTOR ONLINE STATUS ==========
+
+@api_router.put("/doctors/online-status")
+async def set_doctor_online_status(data: dict, payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "doctor":
+        raise HTTPException(status_code=403, detail="Doctors only")
+    is_online = data.get("is_online", False)
+    now = datetime.now(timezone.utc).isoformat()
+    await db.doctor_profiles.update_one(
+        {"user_id": payload["id"]},
+        {"$set": {"is_online": is_online, "online_since": now if is_online else None}}
+    )
+    return {"is_online": is_online}
+
+
+# ========== PATIENT FOLLOW-UP REMINDERS ==========
+
+@api_router.get("/patients/followups")
+async def get_patient_followups(payload: dict = Depends(verify_token)):
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    # Find prescriptions with a future/due follow_up_date for this patient's appointments
+    appointments = await db.appointments.find(
+        {"patient_id": payload["id"]}, {"_id": 0, "id": 1, "doctor_id": 1}
+    ).to_list(500)
+    appt_map = {a["id"]: a["doctor_id"] for a in appointments}
+
+    prescriptions = await db.prescriptions.find(
+        {"appointment_id": {"$in": list(appt_map.keys())}, "follow_up_date": {"$gte": today}},
+        {"_id": 0}
+    ).to_list(20)
+
+    results = []
+    for p in prescriptions:
+        doctor_id = appt_map.get(p["appointment_id"])
+        doctor_user = await db.users.find_one({"id": doctor_id}, {"_id": 0, "full_name": 1}) if doctor_id else None
+        results.append({
+            "appointment_id": p["appointment_id"],
+            "follow_up_date": p["follow_up_date"],
+            "diagnosis": p.get("diagnosis", ""),
+            "doctor_name": doctor_user["full_name"] if doctor_user else "Your Doctor"
+        })
+    return results
+
+
+# ========== HEALTH SCORE ==========
+
+@api_router.get("/health-records/score")
+async def get_health_score(payload: dict = Depends(verify_token)):
+    record = await db.health_records.find_one(
+        {"user_id": payload["id"]}, {"_id": 0}, sort=[("date", -1)]
+    )
+    if not record:
+        return {"score": None, "message": "Add health records to see your Health Score"}
+
+    score = 0
+    breakdown = {}
+
+    # BP systolic
+    bp = record.get("blood_pressure", "")
+    try:
+        systolic = int(str(bp).split("/")[0])
+        if 90 <= systolic <= 120:
+            pts = 25
+        elif 121 <= systolic <= 139:
+            pts = 15
+        else:
+            pts = 5
+    except Exception:
+        pts = 0
+    score += pts
+    breakdown["blood_pressure"] = {"value": bp, "points": pts, "max": 25}
+
+    # O2
+    o2 = record.get("oxygen_saturation", 0) or 0
+    try:
+        o2 = float(o2)
+        if o2 >= 97:
+            pts = 25
+        elif o2 >= 95:
+            pts = 15
+        else:
+            pts = 5
+    except Exception:
+        pts = 0
+    score += pts
+    breakdown["oxygen_saturation"] = {"value": o2, "points": pts, "max": 25}
+
+    # Blood sugar
+    sugar = record.get("blood_sugar", 0) or 0
+    try:
+        sugar = float(sugar)
+        if 70 <= sugar <= 99:
+            pts = 25
+        elif 100 <= sugar <= 125:
+            pts = 15
+        else:
+            pts = 5
+    except Exception:
+        pts = 0
+    score += pts
+    breakdown["blood_sugar"] = {"value": sugar, "points": pts, "max": 25}
+
+    # Heart rate
+    hr = record.get("heart_rate", 0) or 0
+    try:
+        hr = float(hr)
+        if 60 <= hr <= 100:
+            pts = 25
+        else:
+            pts = 10
+    except Exception:
+        pts = 0
+    score += pts
+    breakdown["heart_rate"] = {"value": hr, "points": pts, "max": 25}
+
+    if score >= 80:
+        grade = "Excellent"
+    elif score >= 60:
+        grade = "Good"
+    elif score >= 40:
+        grade = "Fair"
+    else:
+        grade = "Needs Attention"
+
+    return {
+        "score": score,
+        "grade": grade,
+        "breakdown": breakdown,
+        "last_updated": record.get("date", "")
+    }
+
+
+# ========== ASK BEFORE YOU BOOK (DOCTOR QUESTIONS) ==========
+
+class DoctorQuestion(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    doctor_id: str
+    patient_id: str
+    patient_name: str
+    question: str
+    answer: Optional[str] = None
+    is_answered: bool = False
+    created_at: Optional[str] = None
+    answered_at: Optional[str] = None
+
+@api_router.post("/doctors/{doctor_id}/question")
+async def ask_doctor_question(doctor_id: str, data: dict, payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "patient":
+        raise HTTPException(status_code=403, detail="Patients only")
+    # Check for existing unanswered question
+    existing = await db.doctor_questions.find_one(
+        {"doctor_id": doctor_id, "patient_id": payload["id"], "is_answered": False}
+    )
+    if existing:
+        raise HTTPException(status_code=400, detail="You already have an unanswered question for this doctor")
+    question_text = data.get("question", "").strip()
+    if not question_text:
+        raise HTTPException(status_code=400, detail="Question cannot be empty")
+    q = DoctorQuestion(
+        doctor_id=doctor_id,
+        patient_id=payload["id"],
+        patient_name=user.get("full_name", "Patient"),
+        question=question_text,
+        created_at=datetime.now(timezone.utc).isoformat()
+    )
+    q_dict = q.model_dump()
+    await db.doctor_questions.insert_one(q_dict)
+    q_dict.pop("_id", None)
+    return q_dict
+
+@api_router.get("/doctors/questions/inbox")
+async def get_doctor_questions(payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "doctor":
+        raise HTTPException(status_code=403, detail="Doctors only")
+    questions = await db.doctor_questions.find(
+        {"doctor_id": payload["id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(50)
+    return questions
+
+@api_router.put("/doctors/questions/{q_id}/answer")
+async def answer_doctor_question(q_id: str, data: dict, payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "doctor":
+        raise HTTPException(status_code=403, detail="Doctors only")
+    answer = data.get("answer", "").strip()
+    if not answer:
+        raise HTTPException(status_code=400, detail="Answer cannot be empty")
+    result = await db.doctor_questions.update_one(
+        {"id": q_id, "doctor_id": payload["id"]},
+        {"$set": {"answer": answer, "is_answered": True, "answered_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Question not found")
+    return {"message": "Answer submitted"}
+
+
+# ========== GRIEVANCE / COMPLAINT TRACKER ==========
+
+class Complaint(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    patient_id: str
+    patient_name: str
+    appointment_id: Optional[str] = None
+    complaint_type: str
+    description: str
+    status: str = "pending"
+    admin_note: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+@api_router.post("/complaints")
+async def file_complaint(data: dict, payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "patient":
+        raise HTTPException(status_code=403, detail="Patients only")
+    if not data.get("description", "").strip():
+        raise HTTPException(status_code=400, detail="Description is required")
+    now = datetime.now(timezone.utc).isoformat()
+    c = Complaint(
+        patient_id=payload["id"],
+        patient_name=user.get("full_name", "Patient"),
+        appointment_id=data.get("appointment_id"),
+        complaint_type=data.get("complaint_type", "other"),
+        description=data["description"].strip(),
+        created_at=now,
+        updated_at=now
+    )
+    c_dict = c.model_dump()
+    await db.complaints.insert_one(c_dict)
+    c_dict.pop("_id", None)
+    return c_dict
+
+@api_router.get("/complaints/my")
+async def get_my_complaints(payload: dict = Depends(verify_token)):
+    complaints = await db.complaints.find(
+        {"patient_id": payload["id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(50)
+    return complaints
+
+@api_router.get("/admin/complaints")
+async def get_all_complaints(payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    complaints = await db.complaints.find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return complaints
+
+@api_router.put("/admin/complaints/{complaint_id}")
+async def update_complaint(complaint_id: str, data: dict, payload: dict = Depends(verify_token)):
+    user = await db.users.find_one({"id": payload["id"]}, {"_id": 0})
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    update = {"updated_at": datetime.now(timezone.utc).isoformat()}
+    if "status" in data:
+        update["status"] = data["status"]
+    if "admin_note" in data:
+        update["admin_note"] = data["admin_note"]
+    await db.complaints.update_one({"id": complaint_id}, {"$set": update})
+    return {"message": "Complaint updated"}
 
 
 @api_router.get("/health")

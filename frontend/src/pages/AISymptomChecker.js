@@ -6,12 +6,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useNavigate } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import api from '@/utils/api';
 import { toast } from 'sonner';
 
 const AISymptomChecker = () => {
+  const navigate = useNavigate();
   const [symptoms, setSymptoms] = useState('');
   const [age, setAge] = useState('');
   const [gender, setGender] = useState('');
@@ -181,8 +183,16 @@ const AISymptomChecker = () => {
               {/* Suggested Specialist */}
               <div>
                 <Label className="text-sm text-slate-600">Suggested Specialist</Label>
-                <div className="mt-2 p-4 bg-blue-50 rounded-lg border border-blue-100">
+                <div className="mt-2 p-4 bg-blue-50 rounded-lg border border-blue-100 flex items-center justify-between gap-4">
                   <p className="text-blue-700 font-medium">{result.suggested_specialist}</p>
+                  <Button
+                    size="sm"
+                    className="rounded-full flex-shrink-0"
+                    data-testid="book-specialist-btn"
+                    onClick={() => navigate(`/doctors?specialty=${encodeURIComponent(result.suggested_specialist)}`)}
+                  >
+                    Book Now →
+                  </Button>
                 </div>
               </div>
 

@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { Search, Stethoscope, Calendar, Star } from 'lucide-react';
+import { Search, Stethoscope, Calendar, Star, ShieldCheck, Wifi, MessageCircle } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { useLocation } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import AdBanner from '@/components/AdBanner';
@@ -25,6 +27,7 @@ const loadRazorpay = () =>
   });
 
 const DoctorSearch = () => {
+  const location = useLocation();
   const [doctors, setDoctors] = useState([]);
   const [filteredDoctors, setFilteredDoctors] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -32,6 +35,9 @@ const DoctorSearch = () => {
   const [selectedDoctor, setSelectedDoctor] = useState(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [ratingsDoctor, setRatingsDoctor] = useState(null);
+  const [askDialog, setAskDialog] = useState({ open: false, doctorId: null, doctorName: '' });
+  const [askQuestion, setAskQuestion] = useState('');
+  const [askSubmitting, setAskSubmitting] = useState(false);
   const [appointmentData, setAppointmentData] = useState({
     appointment_type: 'online', appointment_date: '', appointment_time: '', notes: ''
   });
@@ -39,13 +45,24 @@ const DoctorSearch = () => {
 
   useEffect(() => { fetchDoctors(); }, []);
 
+  // Read specialty from URL param (e.g., from AI checker)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const specialty = params.get('specialty');
+    if (specialty) setSpecialtyFilter(specialty);
+  }, [location.search]);
+
   useEffect(() => {
     let filtered = doctors;
-    if (specialtyFilter !== 'all') filtered = filtered.filter(d => d.specialization === specialtyFilter);
+    if (specialtyFilter !== 'all') filtered = filtered.filter(d =>
+      d.specialization.toLowerCase().includes(specialtyFilter.toLowerCase())
+    );
     if (searchQuery) filtered = filtered.filter(d =>
-      d.user?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      d.user?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       d.specialization.toLowerCase().includes(searchQuery.toLowerCase())
     );
+    // Online doctors first
+    filtered = [...filtered].sort((a, b) => (b.is_online ? 1 : 0) - (a.is_online ? 1 : 0));
     setFilteredDoctors(filtered);
   }, [doctors, searchQuery, specialtyFilter]);
 
@@ -130,6 +147,21 @@ const DoctorSearch = () => {
     }
   };
 
+  const submitAskQuestion = async () => {
+    if (!askQuestion.trim()) return;
+    setAskSubmitting(true);
+    try {
+      await api.post(`/doctors/${askDialog.doctorId}/question`, { question: askQuestion.trim() });
+      toast.success('Your question has been sent. The doctor will respond soon.');
+      setAskDialog({ open: false, doctorId: null, doctorName: '' });
+      setAskQuestion('');
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Failed to send question');
+    } finally {
+      setAskSubmitting(false);
+    }
+  };
+
   const specialties = [...new Set(doctors.map(d => d.specialization))];
 
   return (
@@ -167,15 +199,30 @@ const DoctorSearch = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredDoctors.map((doctor, idx) => (
-              <Card key={doctor.id} className="card-hover" data-testid={`doctor-card-${idx}`}>
+              <Card key={doctor.id} className={`card-hover ${doctor.is_online ? 'ring-2 ring-green-400' : ''}`} data-testid={`doctor-card-${idx}`}>
                 <CardContent className="p-6">
-                  <div className="flex items-center gap-4 mb-4">
-                    <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <Stethoscope className="h-8 w-8 text-primary" />
+                  <div className="flex items-center gap-4 mb-3">
+                    <div className="relative h-16 w-16 flex-shrink-0">
+                      <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
+                        <Stethoscope className="h-8 w-8 text-primary" />
+                      </div>
+                      {doctor.is_online && (
+                        <span className="absolute bottom-0 right-0 bg-green-500 text-white text-xs px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+                          <Wifi className="h-2.5 w-2.5" />
+                        </span>
+                      )}
                     </div>
                     <div>
                       <h3 className="font-semibold text-lg">{doctor.user?.name}</h3>
                       <p className="text-sm text-slate-600">{doctor.specialization}</p>
+                      {doctor.is_approved && (
+                        <span className="flex items-center gap-1 text-xs text-green-600 font-medium mt-0.5" data-testid={`verified-badge-${idx}`}>
+                          <ShieldCheck className="h-3 w-3" /> Verified · Reg. {doctor.license_number?.slice(0, 8) || 'MCI'}
+                        </span>
+                      )}
+                      {doctor.is_online && (
+                        <span className="text-xs text-green-600 font-semibold">● Available Now</span>
+                      )}
                     </div>
                   </div>
 
@@ -191,11 +238,16 @@ const DoctorSearch = () => {
 
                   {doctor.bio && <p className="text-sm text-slate-600 mb-4 line-clamp-2">{doctor.bio}</p>}
 
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
                     <Button onClick={() => handleBookAppointment(doctor)}
                       className="flex-1 rounded-full bg-primary hover:bg-primary/90"
                       data-testid={`book-button-${idx}`}>
                       <Calendar className="h-4 w-4 mr-2" /> Book
+                    </Button>
+                    <Button variant="outline" size="sm" className="rounded-full gap-1"
+                      onClick={() => { setAskDialog({ open: true, doctorId: doctor.user_id, doctorName: doctor.user?.name || doctor.specialization }); setAskQuestion(''); }}
+                      data-testid={`ask-btn-${idx}`}>
+                      <MessageCircle className="h-3 w-3" /> Ask
                     </Button>
                     {doctor.total_consultations > 0 && (
                       <Button variant="outline" size="sm" className="rounded-full gap-1"
@@ -279,6 +331,31 @@ const DoctorSearch = () => {
             <DialogTitle>Reviews for {ratingsDoctor?.user?.name}</DialogTitle>
           </DialogHeader>
           {ratingsDoctor && <DoctorRatings doctorId={ratingsDoctor.id} />}
+        </DialogContent>
+      </Dialog>
+
+      {/* Ask Before You Book Dialog */}
+      <Dialog open={askDialog.open} onOpenChange={(o) => !o && setAskDialog({ open: false, doctorId: null, doctorName: '' })}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Ask Dr. {askDialog.doctorName} a Question</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-slate-600">Get a quick answer before spending on a consultation. The doctor will reply in your dashboard.</p>
+          <Textarea
+            placeholder="e.g. I have persistent lower back pain for 2 weeks. Is this something you treat?"
+            rows={4}
+            maxLength={300}
+            value={askQuestion}
+            onChange={e => setAskQuestion(e.target.value)}
+            data-testid="ask-question-input"
+          />
+          <p className="text-xs text-slate-400 text-right">{askQuestion.length}/300</p>
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" className="rounded-full" onClick={() => setAskDialog({ open: false, doctorId: null, doctorName: '' })}>Cancel</Button>
+            <Button className="rounded-full" onClick={submitAskQuestion} disabled={askSubmitting || !askQuestion.trim()} data-testid="submit-ask-btn">
+              {askSubmitting ? 'Sending...' : 'Send Question'}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
