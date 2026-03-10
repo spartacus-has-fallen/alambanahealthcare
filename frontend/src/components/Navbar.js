@@ -89,26 +89,26 @@ const Navbar = () => {
         {mobileMenuOpen && (
           <div className="md:hidden py-4 border-t border-slate-200" data-testid="mobile-menu">
             <div className="flex flex-col gap-4">
-              <Link to="/about" className="text-slate-600 hover:text-primary transition-colors">About</Link>
-              <Link to="/contact" className="text-slate-600 hover:text-primary transition-colors">Contact</Link>
-              <Link to="/blogs" className="text-slate-600 hover:text-primary transition-colors">Blog</Link>
+              <Link to="/about" className="text-slate-600 hover:text-primary transition-colors" onClick={() => setMobileMenuOpen(false)}>About</Link>
+              <Link to="/contact" className="text-slate-600 hover:text-primary transition-colors" onClick={() => setMobileMenuOpen(false)}>Contact</Link>
+              <Link to="/blogs" className="text-slate-600 hover:text-primary transition-colors" onClick={() => setMobileMenuOpen(false)}>Blog</Link>
               {isLoggedIn ? (
                 <>
-                  <Link to={getDashboardLink()}>
+                  <Link to={getDashboardLink()} onClick={() => setMobileMenuOpen(false)}>
                     <Button variant="ghost" className="w-full justify-start gap-2">
                       <User className="h-4 w-4" />
                       Dashboard
                     </Button>
                   </Link>
-                  <Button onClick={handleLogout} variant="outline" className="w-full justify-start gap-2">
+                  <Button onClick={() => { setMobileMenuOpen(false); handleLogout(); }} variant="outline" className="w-full justify-start gap-2">
                     <LogOut className="h-4 w-4" />
                     Logout
                   </Button>
                 </>
               ) : (
                 <>
-                  <Link to="/login"><Button variant="outline" className="w-full">Login</Button></Link>
-                  <Link to="/register"><Button className="w-full bg-primary">Get Started</Button></Link>
+                  <Link to="/login" onClick={() => setMobileMenuOpen(false)}><Button variant="outline" className="w-full">Login</Button></Link>
+                  <Link to="/register" onClick={() => setMobileMenuOpen(false)}><Button className="w-full bg-primary">Get Started</Button></Link>
                 </>
               )}
             </div>

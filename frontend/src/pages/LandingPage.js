@@ -101,11 +101,11 @@ const LandingPage = () => {
                 </div>
               </div>
             </div>
-            <div className="relative">
+            <div className="relative hidden md:block">
               <img
                 src="https://images.unsplash.com/photo-1659353888906-adb3e0041693?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODh8MHwxfHNlYXJjaHwzfHxpbmRpYW4lMjBkb2N0b3IlMjBjb25zdWx0YXRpb24lMjBwYXRpZW50fGVufDB8fHx8MTc3MjE3MjcyNXww&ixlib=rb-4.1.0&q=85"
                 alt="Professional Indian Doctor"
-                className="rounded-2xl shadow-2xl w-full object-cover"
+                className="rounded-2xl shadow-2xl w-full object-cover max-h-[520px]"
               />
             </div>
           </div>
