@@ -136,10 +136,10 @@ const PatientDashboard = () => {
   };
 
   const quickActions = [
-    { icon: <Calendar className="h-6 w-6" />, title: 'Find Doctors', link: '/doctors', color: 'bg-blue-100 text-blue-600' },
-    { icon: <BrainCircuit className="h-6 w-6" />, title: 'AI Symptom Checker', link: '/ai-checker', color: 'bg-purple-100 text-purple-600' },
-    { icon: <FileHeart className="h-6 w-6" />, title: 'Health Records', link: '/health-records', color: 'bg-emerald-100 text-emerald-600' },
-    { icon: <Gift className="h-6 w-6" />, title: 'Referral Program', link: '/referral', color: 'bg-amber-100 text-amber-600' },
+    { icon: <Calendar className="h-6 w-6 text-white" />, title: 'Find Doctors', link: '/doctors', bg: 'from-blue-500 to-blue-600' },
+    { icon: <BrainCircuit className="h-6 w-6 text-white" />, title: 'AI Symptom Checker', link: '/ai-checker', bg: 'from-purple-500 to-purple-600' },
+    { icon: <FileHeart className="h-6 w-6 text-white" />, title: 'Health Records', link: '/health-records', bg: 'from-emerald-500 to-emerald-600' },
+    { icon: <Gift className="h-6 w-6 text-white" />, title: 'Referral Program', link: '/referral', bg: 'from-amber-400 to-amber-500' },
   ];
 
   const statusColor = (s) => ({
@@ -149,23 +149,34 @@ const PatientDashboard = () => {
     pending: 'bg-amber-100 text-amber-700'
   }[s] || 'bg-slate-100 text-slate-700');
 
+  const statusBorderColor = (s) => ({
+    confirmed: 'border-l-emerald-400',
+    completed: 'border-l-blue-400',
+    cancelled: 'border-l-red-400',
+    pending: 'border-l-amber-400'
+  }[s] || 'border-l-slate-200');
+
   return (
     <div className="min-h-screen bg-slate-50">
       <Navbar />
 
       <div className="container mx-auto px-4 md:px-6 lg:px-8 max-w-7xl py-8" data-testid="patient-dashboard">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">Welcome back, {user?.name}!</h1>
-          <p className="text-slate-600">Manage your health and appointments</p>
+        <div className="mb-8 rounded-2xl bg-gradient-to-r from-primary to-blue-600 p-6 md:p-8 text-white">
+          <p className="text-sm text-blue-100 mb-1">{new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+          <h1 className="text-3xl font-bold mb-1" style={{ fontFamily: 'Manrope, sans-serif' }}>Welcome back, {user?.name}!</h1>
+          <p className="text-blue-100 text-sm mb-4">Your health dashboard at a glance.</p>
+          <button className="rounded-full bg-white text-primary hover:bg-blue-50 font-semibold text-sm px-4 py-1.5 transition-colors" onClick={() => navigate('/doctors')}>
+            Book a Consultation →
+          </button>
         </div>
 
         {/* Quick Actions */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           {quickActions.map((action, idx) => (
             <Link key={idx} to={action.link} data-testid={`quick-action-${idx}`}>
-              <Card className="card-hover cursor-pointer">
+              <Card className={`card-hover cursor-pointer border-0 rounded-2xl bg-gradient-to-br ${action.bg} text-white shadow-sm`}>
                 <CardContent className="p-6">
-                  <div className={`h-12 w-12 rounded-full ${action.color} flex items-center justify-center mb-4`}>
+                  <div className="h-12 w-12 rounded-full bg-white/20 flex items-center justify-center mb-4">
                     {action.icon}
                   </div>
                   <h3 className="font-semibold">{action.title}</h3>
@@ -254,17 +265,32 @@ const PatientDashboard = () => {
 
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <Card>
-            <CardHeader><CardTitle className="text-sm font-medium text-slate-600">Total Appointments</CardTitle></CardHeader>
-            <CardContent><div className="text-3xl font-bold">{appointments.length}</div></CardContent>
+          <Card className="rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 text-white border-0 shadow-sm">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-blue-100 text-sm font-medium">Total Appointments</p>
+                <Calendar className="h-5 w-5 text-blue-200" />
+              </div>
+              <div className="text-4xl font-bold">{appointments.length}</div>
+            </CardContent>
           </Card>
-          <Card>
-            <CardHeader><CardTitle className="text-sm font-medium text-slate-600">Health Records</CardTitle></CardHeader>
-            <CardContent><div className="text-3xl font-bold">{healthRecords.length}</div></CardContent>
+          <Card className="rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 text-white border-0 shadow-sm">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-emerald-100 text-sm font-medium">Health Records</p>
+                <FileHeart className="h-5 w-5 text-emerald-200" />
+              </div>
+              <div className="text-4xl font-bold">{healthRecords.length}</div>
+            </CardContent>
           </Card>
-          <Card>
-            <CardHeader><CardTitle className="text-sm font-medium text-slate-600">Referral Points</CardTitle></CardHeader>
-            <CardContent><div className="text-3xl font-bold">{referralStats?.total_points || 0}</div></CardContent>
+          <Card className="rounded-2xl bg-gradient-to-br from-purple-500 to-purple-600 text-white border-0 shadow-sm">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-purple-100 text-sm font-medium">Referral Points</p>
+                <Gift className="h-5 w-5 text-purple-200" />
+              </div>
+              <div className="text-4xl font-bold">{referralStats?.total_points || 0}</div>
+            </CardContent>
           </Card>
         </div>
 
@@ -282,7 +308,7 @@ const PatientDashboard = () => {
             ) : (
               <div className="space-y-4">
                 {appointments.map((apt, idx) => (
-                  <div key={idx} className="p-4 bg-slate-50 rounded-lg" data-testid={`appointment-${idx}`}>
+                  <div key={idx} className={`p-4 bg-white rounded-xl border border-slate-100 border-l-4 ${statusBorderColor(apt.status)} shadow-sm`} data-testid={`appointment-${idx}`}>
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <p className="font-semibold">{apt.doctor?.user?.name || 'Doctor'}</p>
@@ -362,7 +388,7 @@ const PatientDashboard = () => {
             ) : (
               <div className="space-y-4">
                 {healthRecords.map((record, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-4 bg-slate-50 rounded-lg" data-testid={`health-record-${idx}`}>
+                  <div key={idx} className="flex items-center justify-between p-4 bg-white rounded-xl border border-slate-100 shadow-sm" data-testid={`health-record-${idx}`}>
                     <div>
                       <p className="font-semibold">{record.record_type} Record</p>
                       <p className="text-sm text-slate-600">{record.date}</p>

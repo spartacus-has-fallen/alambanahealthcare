@@ -228,6 +228,13 @@ const DoctorDashboard = () => {
     pending: 'bg-amber-100 text-amber-700'
   }[s] || 'bg-slate-100 text-slate-700');
 
+  const statusBorderColor = (s) => ({
+    confirmed: 'border-l-emerald-400',
+    completed: 'border-l-blue-400',
+    cancelled: 'border-l-red-400',
+    pending: 'border-l-amber-400'
+  }[s] || 'border-l-slate-200');
+
   return (
     <div className="min-h-screen bg-slate-50">
       <Navbar />
@@ -235,7 +242,8 @@ const DoctorDashboard = () => {
       <div className="container mx-auto px-4 md:px-6 lg:px-8 max-w-7xl py-8" data-testid="doctor-dashboard">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold mb-2" style={{ fontFamily: 'Manrope, sans-serif' }}>Doctor Dashboard</h1>
+            <p className="text-sm text-slate-500 mb-1">{new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+            <h1 className="text-3xl font-bold mb-1" style={{ fontFamily: 'Manrope, sans-serif' }}>Doctor Dashboard</h1>
             <p className="text-slate-600">Manage your consultations and profile</p>
           </div>
           <div className="flex items-center gap-3">
@@ -255,56 +263,61 @@ const DoctorDashboard = () => {
 
         {/* Profile Status */}
         {profile && (
-          <Card className="mb-8 rounded-2xl">
-            <CardContent className="p-6">
+          <Card className="mb-8 rounded-2xl overflow-hidden border-0 shadow-md">
+            <div className={`p-6 ${isOnline ? 'bg-gradient-to-r from-green-500 to-emerald-600' : 'bg-gradient-to-r from-slate-700 to-slate-800'} text-white`}>
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="font-semibold text-lg mb-1">{profile.specialization}</h3>
-                  <p className="text-sm text-slate-600">{profile.qualification} · {profile.experience_years} yrs experience</p>
-                  <p className="text-sm text-slate-600 mt-1">Consultation Fee: ₹{profile.consultation_fee}</p>
+                  <h3 className="font-bold text-xl mb-1">{profile.specialization}</h3>
+                  <p className="text-sm text-white/80">{profile.qualification} · {profile.experience_years} yrs experience</p>
+                  <p className="text-sm text-white/80 mt-0.5">Consultation Fee: ₹{profile.consultation_fee}</p>
                   {profile.available_days?.length > 0 && (
-                    <p className="text-sm text-slate-500 mt-1">Available: {profile.available_days.join(', ')}</p>
+                    <p className="text-xs text-white/60 mt-1">Available: {profile.available_days.slice(0, 4).join(', ')}{profile.available_days.length > 4 ? '...' : ''}</p>
                   )}
                 </div>
-                <div className="text-right">
+                <div className="flex flex-col items-end gap-2">
                   {profile.is_approved ? (
-                    <div className="flex flex-col items-end gap-1">
-                      <div className="flex items-center gap-2 text-emerald-600">
-                        <CheckCircle className="h-5 w-5" />
-                        <span className="font-semibold">Approved</span>
-                      </div>
-                      <div className="flex items-center gap-1 text-xs text-green-600 font-medium">
-                        <ShieldCheck className="h-3 w-3" /> Verified by Alambana
-                      </div>
+                    <div className="flex items-center gap-1.5 bg-white/20 rounded-full px-3 py-1.5">
+                      <ShieldCheck className="h-4 w-4" />
+                      <span className="text-sm font-semibold">Verified</span>
                     </div>
                   ) : (
-                    <div className="px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-sm font-semibold">
-                      Pending Approval
-                    </div>
+                    <div className="px-3 py-1.5 bg-amber-400/80 rounded-full text-sm font-semibold">Pending Approval</div>
                   )}
                 </div>
               </div>
-            </CardContent>
+            </div>
           </Card>
         )}
 
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <Card className="rounded-2xl">
-            <CardHeader><CardTitle className="text-sm font-medium text-slate-600">Total Consultations</CardTitle></CardHeader>
-            <CardContent><div className="text-3xl font-bold">{profile?.total_consultations || 0}</div></CardContent>
+          <Card className="rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 text-white border-0 shadow-sm">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-blue-100 text-sm font-medium">Total Consultations</p>
+                <Calendar className="h-5 w-5 text-blue-200" />
+              </div>
+              <div className="text-4xl font-bold">{profile?.total_consultations || 0}</div>
+            </CardContent>
           </Card>
-          <Card className="rounded-2xl">
-            <CardHeader><CardTitle className="text-sm font-medium text-slate-600">Pending</CardTitle></CardHeader>
-            <CardContent><div className="text-3xl font-bold">{appointments.filter(a => a.status === 'pending').length}</div></CardContent>
+          <Card className="rounded-2xl bg-gradient-to-br from-amber-400 to-amber-500 text-white border-0 shadow-sm">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-amber-100 text-sm font-medium">Pending Appointments</p>
+                <Calendar className="h-5 w-5 text-amber-200" />
+              </div>
+              <div className="text-4xl font-bold">{appointments.filter(a => a.status === 'pending').length}</div>
+            </CardContent>
           </Card>
-          <Card className="rounded-2xl">
-            <CardHeader><CardTitle className="text-sm font-medium text-slate-600">Rating</CardTitle></CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2">
-                <div className="text-3xl font-bold">{profile?.rating || 0}</div>
-                <Star className="h-5 w-5 text-amber-400 fill-amber-400" />
-                <span className="text-slate-500 text-sm">/5</span>
+          <Card className="rounded-2xl bg-gradient-to-br from-violet-500 to-violet-600 text-white border-0 shadow-sm">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-violet-100 text-sm font-medium">Patient Rating</p>
+                <Star className="h-5 w-5 text-violet-200 fill-violet-200" />
+              </div>
+              <div className="flex items-baseline gap-1">
+                <div className="text-4xl font-bold">{profile?.rating || 0}</div>
+                <span className="text-violet-200 text-sm">/5</span>
               </div>
             </CardContent>
           </Card>
@@ -334,7 +347,7 @@ const DoctorDashboard = () => {
                 ) : (
                   <div className="space-y-4">
                     {appointments.map((apt, idx) => (
-                      <div key={apt.id} className="p-4 bg-slate-50 rounded-xl border border-slate-200" data-testid={`appointment-${idx}`}>
+                      <div key={apt.id} className={`p-4 bg-white rounded-xl border border-slate-100 border-l-4 ${statusBorderColor(apt.status)} shadow-sm`} data-testid={`appointment-${idx}`}>
                         <div className="flex items-start justify-between gap-4">
                           <div className="flex-1 min-w-0">
                             <p className="font-semibold">{apt.patient?.name || 'Patient'}</p>
