@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Disallow: /patient/dashboard
+Disallow: /doctor/dashboard
+Disallow: /admin/
+Disallow: /health-records
+Disallow: /referral
+Disallow: /doctors
+
+Sitemap: https://alambanahealthcare.vercel.app/sitemap.xml
